@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:16-alpine
+    container_name: itcfg-postgres
+    environment:
+      POSTGRES_DB: itcfg
+      POSTGRES_USER: itcfg
+      POSTGRES_PASSWORD: itcfg123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itcfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 配置中台后端
+  server:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    container_name: itcfg-server
+    environment:
+      DATABASE_DSN: "host=postgres user=itcfg password=itcfg123 dbname=itcfg port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+      SERVER_PORT: "8080"
+      TEMPLATE_DIR: "/app/templates"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../server/templates:/app/templates
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # 配置中台前端
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    container_name: itcfg-web
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
