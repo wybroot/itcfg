@@ -1,0 +1,23 @@
+name: java-app
+display_name: Java 应用服务
+description: Spring Boot Java 后端应用
+category: application
+output_dir: /opt/itcfg/java-app
+config_files:
+  - path: application.yml.tmpl
+    target: /opt/java-app/config/application.yml
+    owner: appuser
+    mode: "0644"
+  - path: logback.xml.tmpl
+    target: /opt/java-app/config/logback.xml
+    owner: appuser
+    mode: "0644"
+  - path: jvm.options.tmpl
+    target: /opt/java-app/config/jvm.options
+    owner: appuser
+    mode: "0644"
+dependencies:
+  - component: postgresql
+    reason: "需要数据库连接信息"
+  - component: redis
+    reason: "需要 Redis 缓存连接信息"

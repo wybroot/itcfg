@@ -1,0 +1,10 @@
+name: onlyoffice
+display_name: OnlyOffice 文档服务
+description: 在线文档编辑和协作服务
+category: office
+output_dir: /opt/itcfg/onlyoffice
+config_files:
+  - path: local.json.tmpl
+    target: /etc/onlyoffice/documentserver/local.json
+    owner: ds
+    mode: "0644"

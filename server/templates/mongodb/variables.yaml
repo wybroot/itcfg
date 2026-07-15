@@ -1,0 +1,62 @@
+variables:
+  - name: BIND_IP
+    label: 绑定地址
+    type: string
+    default: "0.0.0.0"
+    required: true
+    group: 网络配置
+
+  - name: PORT
+    label: 监听端口
+    type: number
+    default: "27017"
+    required: true
+    min: 1
+    max: 65535
+    group: 网络配置
+
+  - name: DB_PATH
+    label: 数据目录
+    type: string
+    default: "/var/lib/mongodb"
+    required: true
+    group: 存储配置
+
+  - name: LOG_PATH
+    label: 日志目录
+    type: string
+    default: "/var/log/mongodb"
+    required: false
+    group: 日志配置
+
+  - name: REPL_SET_NAME
+    label: 副本集名称
+    type: string
+    default: ""
+    required: false
+    group: 集群配置
+    description: 为空则不启用副本集
+
+  - name: AUTHORIZATION
+    label: 启用认证
+    type: boolean
+    default: "enabled"
+    required: true
+    group: 安全配置
+
+  - name: STORAGE_ENGINE
+    label: 存储引擎
+    type: select
+    default: "wiredTiger"
+    required: true
+    options: ["wiredTiger", "mmapv1"]
+    group: 存储配置
+
+  - name: WIREDTIGER_CACHE_SIZE
+    label: 缓存大小(GB)
+    type: number
+    default: "1"
+    required: false
+    min: 1
+    max: 64
+    group: 内存配置

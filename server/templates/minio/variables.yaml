@@ -1,0 +1,60 @@
+variables:
+  - name: MINIO_ROOT_USER
+    label: 管理员用户名
+    type: string
+    default: "minioadmin"
+    required: true
+    group: 基础配置
+
+  - name: MINIO_ROOT_PASSWORD
+    label: 管理员密码
+    type: password
+    required: true
+    group: 基础配置
+
+  - name: API_PORT
+    label: API 端口
+    type: number
+    default: "9000"
+    required: true
+    min: 1
+    max: 65535
+    group: 网络配置
+
+  - name: CONSOLE_PORT
+    label: 控制台端口
+    type: number
+    default: "9001"
+    required: true
+    min: 1
+    max: 65535
+    group: 网络配置
+
+  - name: DATA_DIR
+    label: 数据目录
+    type: string
+    default: "/data"
+    required: true
+    group: 存储配置
+
+  - name: BUCKET_NAME
+    label: 默认存储桶
+    type: string
+    default: "itcfg-files"
+    required: true
+    group: 存储配置
+
+  - name: REGION
+    label: 区域
+    type: string
+    default: "us-east-1"
+    required: false
+    group: 基础配置
+
+  - name: LOG_LEVEL
+    label: 日志级别
+    type: select
+    default: "error"
+    required: false
+    options: ["debug", "info", "error", "fatal"]
+    group: 日志配置

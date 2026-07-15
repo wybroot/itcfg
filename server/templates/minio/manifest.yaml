@@ -1,0 +1,10 @@
+name: minio
+display_name: MinIO 对象存储
+description: 兼容 S3 的高性能对象存储服务
+category: object-storage
+output_dir: /opt/itcfg/minio
+config_files:
+  - path: config.env.tmpl
+    target: /etc/minio/config.env
+    owner: minio
+    mode: "0640"

@@ -1,0 +1,10 @@
+name: mongodb
+display_name: MongoDB 数据库
+description: 分布式文档数据库
+category: database
+output_dir: /opt/itcfg/mongodb
+config_files:
+  - path: mongod.conf.tmpl
+    target: /etc/mongod.conf
+    owner: mongodb
+    mode: "0644"

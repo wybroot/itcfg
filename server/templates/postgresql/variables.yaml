@@ -1,0 +1,96 @@
+variables:
+  - name: LISTEN_ADDRESS
+    label: 监听地址
+    type: string
+    default: "*"
+    required: true
+    group: 连接配置
+    description: PostgreSQL 监听地址，* 表示监听所有地址
+
+  - name: PORT
+    label: 监听端口
+    type: number
+    default: "5432"
+    required: true
+    min: 1
+    max: 65535
+    group: 连接配置
+
+  - name: MAX_CONNECTIONS
+    label: 最大连接数
+    type: number
+    default: "200"
+    required: true
+    min: 10
+    max: 10000
+    group: 连接配置
+
+  - name: SHARED_BUFFERS
+    label: 共享缓冲区
+    type: select
+    default: "256MB"
+    required: true
+    options: ["128MB", "256MB", "512MB", "1GB", "2GB", "4GB"]
+    group: 内存配置
+    description: 建议设置为系统内存的 25%
+
+  - name: EFFECTIVE_CACHE_SIZE
+    label: 有效缓存大小
+    type: select
+    default: "1GB"
+    required: true
+    options: ["512MB", "1GB", "2GB", "4GB", "8GB"]
+    group: 内存配置
+
+  - name: WAL_LEVEL
+    label: WAL 日志级别
+    type: select
+    default: "replica"
+    required: true
+    options: ["minimal", "replica", "logical"]
+    group: WAL 配置
+
+  - name: MAX_WAL_SIZE
+    label: 最大 WAL 大小
+    type: select
+    default: "2GB"
+    required: true
+    options: ["1GB", "2GB", "4GB", "8GB"]
+    group: WAL 配置
+
+  - name: AUTHENTICATION_METHOD
+    label: 认证方式
+    type: select
+    default: "md5"
+    required: true
+    options: ["trust", "md5", "scram-sha-256"]
+    group: 安全配置
+
+  - name: ALLOWED_NETWORKS
+    label: 允许访问的网络
+    type: string
+    default: "0.0.0.0/0"
+    required: true
+    group: 安全配置
+    description: 允许连接 PostgreSQL 的网络，逗号分隔
+
+  - name: LOG_DIR
+    label: 日志目录
+    type: string
+    default: "/var/log/postgresql"
+    required: false
+    group: 日志配置
+
+  - name: TIMEZONE
+    label: 时区
+    type: string
+    default: "Asia/Shanghai"
+    required: true
+    group: 基础配置
+
+  - name: DEFAULT_TEXT_SEARCH_CONFIG
+    label: 默认文本搜索配置
+    type: string
+    default: "pg_catalog.simple"
+    required: false
+    group: 基础配置

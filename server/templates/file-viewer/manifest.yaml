@@ -1,0 +1,10 @@
+name: file-viewer
+display_name: File Viewer 文件预览
+description: 文件在线预览服务
+category: file-service
+output_dir: /opt/itcfg/file-viewer
+config_files:
+  - path: application.yml.tmpl
+    target: /opt/file-viewer/config/application.yml
+    owner: appuser
+    mode: "0644"

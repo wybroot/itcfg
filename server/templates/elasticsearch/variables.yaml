@@ -1,0 +1,75 @@
+variables:
+  - name: CLUSTER_NAME
+    label: 集群名称
+    type: string
+    default: "itcfg-es-cluster"
+    required: true
+    group: 集群配置
+
+  - name: NODE_NAME
+    label: 节点名称
+    type: string
+    default: "es-node-1"
+    required: true
+    group: 集群配置
+
+  - name: NETWORK_HOST
+    label: 绑定地址
+    type: string
+    default: "0.0.0.0"
+    required: true
+    group: 网络配置
+
+  - name: HTTP_PORT
+    label: HTTP 端口
+    type: number
+    default: "9200"
+    required: true
+    min: 1
+    max: 65535
+    group: 网络配置
+
+  - name: TRANSPORT_PORT
+    label: 集群通信端口
+    type: number
+    default: "9300"
+    required: true
+    min: 1
+    max: 65535
+    group: 网络配置
+
+  - name: DATA_PATH
+    label: 数据目录
+    type: string
+    default: "/var/lib/elasticsearch"
+    required: true
+    group: 存储配置
+
+  - name: LOG_PATH
+    label: 日志目录
+    type: string
+    default: "/var/log/elasticsearch"
+    required: false
+    group: 日志配置
+
+  - name: ES_JAVA_OPTS
+    label: JVM 内存
+    type: string
+    default: "-Xms1g -Xmx1g"
+    required: true
+    group: 内存配置
+
+  - name: DISCOVERY_TYPE
+    label: 发现模式
+    type: select
+    default: "single-node"
+    required: true
+    options: ["single-node", "multi-node"]
+    group: 集群配置
+
+  - name: XPACK_SECURITY_ENABLED
+    label: 启用安全认证
+    type: boolean
+    default: "false"
+    required: false
+    group: 安全配置

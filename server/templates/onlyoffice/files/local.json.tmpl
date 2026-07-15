@@ -1,0 +1,59 @@
+{
+  "services": {
+    "CoAuthoring": {
+      "sql": {
+        "type": "postgres",
+        "dbHost": "{{.DB_HOST}}",
+        "dbPort": "{{.DB_PORT}}",
+        "dbName": "{{.DB_NAME}}",
+        "dbUser": "{{.DB_USER}}",
+        "dbPass": "{{.DB_PASSWORD}}"
+      },
+      {{if .REDIS_HOST}}
+      "redis": {
+        "host": "{{.REDIS_HOST}}"
+      },
+      {{end}}
+      "token": {
+        "enable": {
+          "request": {
+            "inbox": true,
+            "outbox": true
+          },
+          "browser": true
+        },
+        "inbox": {
+          "header": "Authorization",
+          "prefix": "Bearer "
+        },
+        "outbox": {
+          "header": "Authorization",
+          "prefix": "Bearer "
+        }
+      },
+      "secret": {
+        "inbox": {
+          "string": "{{.JWT_SECRET}}"
+        },
+        "outbox": {
+          "string": "{{.JWT_SECRET}}"
+        },
+        "session": {
+          "string": "{{.JWT_SECRET}}"
+        }
+      }
+    }
+  },
+  "storage": {
+    "fs": {
+      "folderPath": "{{.STORAGE_PATH}}"
+    }
+  },
+  "queue": {
+    "type": "rabbitmq"
+  },
+  "rabbitmq": {
+    "url": "amqp://guest:guest@localhost:5672"
+  },
+  "maxFileSize": {{.MAX_FILE_SIZE}}000000
+}

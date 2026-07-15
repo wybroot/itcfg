@@ -1,0 +1,10 @@
+name: kafka
+display_name: Kafka 消息队列
+description: 分布式流处理平台
+category: message-queue
+output_dir: /opt/itcfg/kafka
+config_files:
+  - path: server.properties.tmpl
+    target: /etc/kafka/server.properties
+    owner: kafka
+    mode: "0644"

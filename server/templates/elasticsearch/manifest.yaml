@@ -1,0 +1,10 @@
+name: elasticsearch
+display_name: Elasticsearch 搜索引擎
+description: 分布式全文检索引擎(含 IK 中文分词)
+category: search-engine
+output_dir: /opt/itcfg/elasticsearch
+config_files:
+  - path: elasticsearch.yml.tmpl
+    target: /etc/elasticsearch/elasticsearch.yml
+    owner: elasticsearch
+    mode: "0644"

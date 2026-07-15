@@ -1,0 +1,62 @@
+variables:
+  - name: NODE_NAME
+    label: 节点名称
+    type: string
+    default: "etcd-node-1"
+    required: true
+    group: 基础配置
+
+  - name: DATA_DIR
+    label: 数据目录
+    type: string
+    default: "/var/lib/etcd"
+    required: true
+    group: 存储配置
+
+  - name: CLIENT_PORT
+    label: 客户端端口
+    type: number
+    default: "2379"
+    required: true
+    min: 1
+    max: 65535
+    group: 网络配置
+
+  - name: PEER_PORT
+    label: 节点间通信端口
+    type: number
+    default: "2380"
+    required: true
+    min: 1
+    max: 65535
+    group: 网络配置
+
+  - name: LISTEN_CLIENT_URLS
+    label: 客户端监听地址
+    type: string
+    default: "http://0.0.0.0:2379"
+    required: true
+    group: 网络配置
+
+  - name: ADVERTISE_CLIENT_URLS
+    label: 客户端广播地址
+    type: string
+    default: "http://localhost:2379"
+    required: true
+    group: 网络配置
+
+  - name: INITIAL_CLUSTER_TOKEN
+    label: 集群 Token
+    type: string
+    default: "itcfg-etcd-cluster"
+    required: false
+    group: 集群配置
+
+  - name: SNAPSHOT_COUNT
+    label: 快照触发次数
+    type: number
+    default: "100000"
+    required: false
+    min: 1000
+    max: 1000000
+    group: 性能配置

@@ -1,0 +1,52 @@
+variables:
+  - name: SERVER_NAME
+    label: 服务域名
+    type: string
+    default: "collabora.example.com"
+    required: true
+    group: 基础配置
+
+  - name: STORAGE_WOPI_HOST
+    label: WOPI 主机地址
+    type: string
+    default: "localhost"
+    required: true
+    group: 基础配置
+    description: 应用服务器的地址，用于文档回调
+
+  - name: STORAGE_WOPI_PORT
+    label: WOPI 端口
+    type: number
+    default: "443"
+    required: false
+    group: 基础配置
+
+  - name: ADMIN_USER
+    label: 管理员用户名
+    type: string
+    default: "admin"
+    required: true
+    group: 安全配置
+
+  - name: ADMIN_PASSWORD
+    label: 管理员密码
+    type: password
+    required: true
+    group: 安全配置
+
+  - name: MAX_DOCUMENT_SIZE
+    label: 最大文档大小(MB)
+    type: number
+    default: "100"
+    required: false
+    min: 1
+    max: 1024
+    group: 性能配置
+
+  - name: LOG_LEVEL
+    label: 日志级别
+    type: select
+    default: "warning"
+    required: false
+    options: ["none", "fatal", "critical", "error", "warning", "notice", "information", "debug", "trace"]
+    group: 日志配置

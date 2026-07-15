@@ -1,0 +1,253 @@
+version: '3.8'
+
+networks:
+  itcfg-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: {{.NETWORK_SUBNET}}
+
+services:
+{{if eq .ENABLE_NGINX "true"}}
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: {{.PROJECT_NAME}}-nginx
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ${DATA_BASE_DIR:-/data}/nginx/logs:/var/log/nginx
+    networks:
+      - itcfg-network
+    depends_on:
+      - java-app
+    environment:
+      - TZ={{.TIMEZONE}}
+{{end}}
+
+{{if eq .ENABLE_JAVA_APP "true"}}
+  java-app:
+    image: ${JAVA_APP_IMAGE:-java-app:latest}
+    container_name: {{.PROJECT_NAME}}-java-app
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${JAVA_APP_PORT:-8080}:8080"
+    volumes:
+      - ./configs/java-app:/opt/java-app/config:ro
+      - ${LOG_BASE_DIR:-/var/log}/java-app:/opt/java-app/logs
+    networks:
+      - itcfg-network
+    depends_on:
+      - postgresql
+      - redis
+    environment:
+      - TZ={{.TIMEZONE}}
+      - JAVA_OPTS=${JAVA_OPTS:--Xms512m -Xmx1g}
+{{end}}
+
+{{if eq .ENABLE_POSTGRESQL "true"}}
+  postgresql:
+    image: postgres:16-alpine
+    container_name: {{.PROJECT_NAME}}-postgresql
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/postgresql:/var/lib/postgresql/data
+      - ./configs/postgresql/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+      - POSTGRES_DB=${POSTGRES_DB:-itcfg}
+      - POSTGRES_USER=${POSTGRES_USER:-itcfg}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-itcfg123}
+{{end}}
+
+{{if eq .ENABLE_REDIS "true"}}
+  redis:
+    image: redis:7.2-alpine
+    container_name: {{.PROJECT_NAME}}-redis
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/redis:/data
+      - ./configs/redis/redis.conf:/etc/redis/redis.conf:ro
+    command: redis-server /etc/redis/redis.conf
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+{{end}}
+
+{{if eq .ENABLE_MINIO "true"}}
+  minio:
+    image: minio/minio:latest
+    container_name: {{.PROJECT_NAME}}-minio
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/minio:/data
+    env_file:
+      - ./configs/minio/config.env
+    command: server /data --console-address ":9001"
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+{{end}}
+
+{{if eq .ENABLE_MONGODB "true"}}
+  mongodb:
+    image: mongo:7.0
+    container_name: {{.PROJECT_NAME}}-mongodb
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/mongodb:/data/db
+      - ./configs/mongodb/mongod.conf:/etc/mongod.conf:ro
+    command: mongod --config /etc/mongod.conf
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+{{end}}
+
+{{if eq .ENABLE_ELASTICSEARCH "true"}}
+  elasticsearch:
+    image: elasticsearch:8.x
+    container_name: {{.PROJECT_NAME}}-elasticsearch
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${ES_HTTP_PORT:-9200}:9200"
+      - "${ES_TRANSPORT_PORT:-9300}:9300"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/elasticsearch:/usr/share/elasticsearch/data
+      - ./configs/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    environment:
+      - TZ={{.TIMEZONE}}
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms1g -Xmx1g}
+      - discovery.type=single-node
+    networks:
+      - itcfg-network
+{{end}}
+
+{{if eq .ENABLE_ETCD "true"}}
+  etcd:
+    image: quay.io/coreos/etcd:v3.5
+    container_name: {{.PROJECT_NAME}}-etcd
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${ETCD_CLIENT_PORT:-2379}:2379"
+      - "${ETCD_PEER_PORT:-2380}:2380"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/etcd:/etcd-data
+    command: etcd --config-file /etc/etcd/etcd.conf
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+{{end}}
+
+{{if eq .ENABLE_KAFKA "true"}}
+  kafka:
+    image: bitnami/kafka:3.6
+    container_name: {{.PROJECT_NAME}}-kafka
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/kafka:/bitnami/kafka
+      - ./configs/kafka/server.properties:/opt/bitnami/kafka/config/server.properties:ro
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+  zookeeper:
+    image: bitnami/zookeeper:3.8
+    container_name: {{.PROJECT_NAME}}-zookeeper
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "2181:2181"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/zookeeper:/bitnami/zookeeper
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - TZ={{.TIMEZONE}}
+    networks:
+      - itcfg-network
+{{end}}
+
+{{if eq .ENABLE_ONLYOFFICE "true"}}
+  onlyoffice:
+    image: onlyoffice/documentserver:8.0
+    container_name: {{.PROJECT_NAME}}-onlyoffice
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${ONLYOFFICE_PORT:-8083}:80"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/onlyoffice:/var/www/onlyoffice/Data
+      - ./configs/onlyoffice/local.json:/etc/onlyoffice/documentserver/local.json:ro
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+      - JWT_ENABLED=true
+{{end}}
+
+{{if eq .ENABLE_COLLABORA "true"}}
+  collabora-code:
+    image: collabora/code:25.04.9.4.1
+    container_name: {{.PROJECT_NAME}}-collabora
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${COLLABORA_PORT:-9980}:9980"
+    volumes:
+      - ./configs/collabora-code/coolwsd.xml:/etc/coolwsd/coolwsd.xml:ro
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+{{end}}
+
+{{if eq .ENABLE_FILE_VIEWER "true"}}
+  file-viewer:
+    image: file-viewer:latest
+    container_name: {{.PROJECT_NAME}}-file-viewer
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${FILE_VIEWER_PORT:-8081}:8081"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/files:/data/files
+      - ./configs/file-viewer/application.yml:/opt/file-viewer/config/application.yml:ro
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+{{end}}
+
+{{if eq .ENABLE_FILECODEBOX "true"}}
+  filecodebox:
+    image: filecodebox:latest
+    container_name: {{.PROJECT_NAME}}-filecodebox
+    restart: {{.RESTART_POLICY}}
+    ports:
+      - "${FILECODEBOX_PORT:-8082}:8082"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/uploads:/data/uploads
+    env_file:
+      - ./configs/filecodebox/config.env
+    networks:
+      - itcfg-network
+    environment:
+      - TZ={{.TIMEZONE}}
+{{end}}

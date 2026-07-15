@@ -1,0 +1,55 @@
+variables:
+  - name: BROKER_ID
+    label: Broker ID
+    type: number
+    default: "1"
+    required: true
+    min: 1
+    max: 1000
+    group: 基础配置
+
+  - name: LISTENERS
+    label: 监听地址
+    type: string
+    default: "PLAINTEXT://0.0.0.0:9092"
+    required: true
+    group: 网络配置
+
+  - name: ADVERTISED_LISTENERS
+    label: 对外广播地址
+    type: string
+    default: "PLAINTEXT://localhost:9092"
+    required: true
+    group: 网络配置
+
+  - name: LOG_DIRS
+    label: 日志目录
+    type: string
+    default: "/var/lib/kafka/data"
+    required: true
+    group: 存储配置
+
+  - name: NUM_PARTITIONS
+    label: 默认分区数
+    type: number
+    default: "3"
+    required: false
+    min: 1
+    max: 100
+    group: 性能配置
+
+  - name: LOG_RETENTION_HOURS
+    label: 日志保留时间(小时)
+    type: number
+    default: "168"
+    required: false
+    min: 1
+    max: 8760
+    group: 存储配置
+
+  - name: ZOOKEEPER_CONNECT
+    label: ZooKeeper 连接地址
+    type: string
+    default: "localhost:2181"
+    required: true
+    group: 依赖配置

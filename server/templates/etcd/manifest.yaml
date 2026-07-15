@@ -1,0 +1,10 @@
+name: etcd
+display_name: Etcd 协调服务
+description: 分布式键值存储，用于服务发现和配置共享
+category: coordination
+output_dir: /opt/itcfg/etcd
+config_files:
+  - path: etcd.conf.tmpl
+    target: /etc/etcd/etcd.conf
+    owner: etcd
+    mode: "0644"

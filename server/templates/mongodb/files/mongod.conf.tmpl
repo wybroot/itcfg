@@ -1,0 +1,29 @@
+systemLog:
+  destination: file
+  path: {{.LOG_PATH}}/mongod.log
+  logAppend: true
+
+storage:
+  dbPath: {{.DB_PATH}}
+  engine: {{.STORAGE_ENGINE}}
+  wiredTiger:
+    engineConfig:
+      cacheSizeGB: {{.WIREDTIGER_CACHE_SIZE}}
+
+processManagement:
+  fork: false
+  pidFilePath: /var/run/mongod.pid
+  timeZoneInfo: /usr/share/zoneinfo
+
+net:
+  bindIp: {{.BIND_IP}}
+  port: {{.PORT}}
+  maxIncomingConnections: 65536
+
+security:
+  authorization: {{.AUTHORIZATION}}
+
+{{if .REPL_SET_NAME}}
+replication:
+  replSetName: {{.REPL_SET_NAME}}
+{{end}}

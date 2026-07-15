@@ -1,0 +1,26 @@
+<config>
+    <server_name>{{.SERVER_NAME}}</server_name>
+    <file_server_root_path>/opt/cool/file-server</file_server_root_path>
+    <logging>
+        <level>{{.LOG_LEVEL}}</level>
+    </logging>
+    <storage>
+        <wopi>
+            <host>{{.STORAGE_WOPI_HOST}}</host>
+            {{if .STORAGE_WOPI_PORT}}<port>{{.STORAGE_WOPI_PORT}}</port>{{end}}
+            <allow>true</allow>
+        </wopi>
+    </storage>
+    <admin_console>
+        <enable>true</enable>
+        <username>{{.ADMIN_USER}}</username>
+        <password>{{.ADMIN_PASSWORD}}</password>
+    </admin_console>
+    <per_document>
+        <max_file_size_mb>{{.MAX_DOCUMENT_SIZE}}</max_file_size_mb>
+    </per_document>
+    <ssl>
+        <enable>false</enable>
+        <termination>true</termination>
+    </ssl>
+</config>

@@ -1,0 +1,10 @@
+name: collabora-code
+display_name: Collabora Code 在线办公
+description: 基于 LibreOffice 的在线文档协作编辑服务
+category: office
+output_dir: /opt/itcfg/collabora-code
+config_files:
+  - path: coolwsd.xml.tmpl
+    target: /etc/coolwsd/coolwsd.xml
+    owner: cool
+    mode: "0644"

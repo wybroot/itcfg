@@ -1,0 +1,14 @@
+name: postgresql
+display_name: PostgreSQL 数据库
+description: PostgreSQL 关系型数据库服务
+category: database
+output_dir: /opt/itcfg/postgresql
+config_files:
+  - path: postgresql.conf.tmpl
+    target: /etc/postgresql/postgresql.conf
+    owner: postgres
+    mode: "0644"
+  - path: pg_hba.conf.tmpl
+    target: /etc/postgresql/pg_hba.conf
+    owner: postgres
+    mode: "0600"

@@ -1,0 +1,105 @@
+variables:
+  - name: BIND_ADDRESS
+    label: 绑定地址
+    type: string
+    default: "0.0.0.0"
+    required: true
+    group: 基础配置
+    description: Redis 监听地址
+
+  - name: PORT
+    label: 监听端口
+    type: number
+    default: "6379"
+    required: true
+    min: 1
+    max: 65535
+    group: 基础配置
+
+  - name: REQUIREPASS
+    label: 访问密码
+    type: password
+    required: true
+    group: 安全配置
+    description: 为空则不设置密码
+
+  - name: MAXMEMORY
+    label: 最大内存
+    type: select
+    default: "1gb"
+    required: true
+    options: ["256mb", "512mb", "1gb", "2gb", "4gb", "8gb", "16gb"]
+    group: 内存配置
+
+  - name: MAXMEMORY_POLICY
+    label: 内存淘汰策略
+    type: select
+    default: "allkeys-lru"
+    required: true
+    options: ["noeviction", "allkeys-lru", "volatile-lru", "allkeys-random", "volatile-random", "volatile-ttl", "allkeys-lfu", "volatile-lfu"]
+    group: 内存配置
+
+  - name: DATABASES
+    label: 数据库数量
+    type: number
+    default: "16"
+    required: false
+    min: 1
+    max: 256
+    group: 基础配置
+
+  - name: SAVE_INTERVAL
+    label: 持久化策略
+    type: string
+    default: "900 1 300 10 60 10000"
+    required: false
+    group: 持久化配置
+    description: 格式: "秒数 变更次数 秒数 变更次数 ..."
+
+  - name: APPENDONLY
+    label: AOF 持久化
+    type: boolean
+    default: "yes"
+    required: false
+    group: 持久化配置
+
+  - name: APPENDFSYNC
+    label: AOF 同步策略
+    type: select
+    default: "everysec"
+    required: false
+    options: ["always", "everysec", "no"]
+    group: 持久化配置
+
+  - name: LOG_LEVEL
+    label: 日志级别
+    type: select
+    default: "notice"
+    required: false
+    options: ["debug", "verbose", "notice", "warning"]
+    group: 日志配置
+
+  - name: LOG_DIR
+    label: 日志目录
+    type: string
+    default: "/var/log/redis"
+    required: false
+    group: 日志配置
+
+  - name: TCP_BACKLOG
+    label: TCP 连接队列
+    type: number
+    default: "511"
+    required: false
+    min: 1
+    max: 65535
+    group: 性能配置
+
+  - name: TIMEOUT
+    label: 客户端超时(秒)
+    type: number
+    default: "300"
+    required: false
+    min: 0
+    max: 86400
+    group: 连接配置

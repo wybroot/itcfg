@@ -1,0 +1,70 @@
+variables:
+  - name: DB_HOST
+    label: 数据库主机
+    type: string
+    default: "127.0.0.1"
+    required: true
+    group: 数据库连接
+
+  - name: DB_PORT
+    label: 数据库端口
+    type: number
+    default: "5432"
+    required: true
+    group: 数据库连接
+
+  - name: DB_NAME
+    label: 数据库名称
+    type: string
+    default: "onlyoffice"
+    required: true
+    group: 数据库连接
+
+  - name: DB_USER
+    label: 数据库用户名
+    type: string
+    default: "onlyoffice"
+    required: true
+    group: 数据库连接
+
+  - name: DB_PASSWORD
+    label: 数据库密码
+    type: password
+    required: true
+    group: 数据库连接
+
+  - name: REDIS_HOST
+    label: Redis 主机
+    type: string
+    default: "127.0.0.1"
+    required: false
+    group: 缓存连接
+
+  - name: JWT_SECRET
+    label: JWT 签名密钥
+    type: password
+    required: true
+    group: 安全配置
+
+  - name: STORAGE_PATH
+    label: 文件存储路径
+    type: string
+    default: "/var/lib/onlyoffice/documentserver/App_Data"
+    required: true
+    group: 存储配置
+
+  - name: LOG_PATH
+    label: 日志路径
+    type: string
+    default: "/var/log/onlyoffice"
+    required: false
+    group: 日志配置
+
+  - name: MAX_FILE_SIZE
+    label: 最大文件大小(MB)
+    type: number
+    default: "100"
+    required: false
+    min: 1
+    max: 1024
+    group: 性能配置

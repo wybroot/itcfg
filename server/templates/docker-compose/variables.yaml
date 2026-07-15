@@ -1,0 +1,134 @@
+variables:
+  - name: PROJECT_NAME
+    label: 项目名称
+    type: string
+    default: "itcfg"
+    required: true
+    group: 基础配置
+
+  - name: NETWORK_SUBNET
+    label: 容器网络子网
+    type: string
+    default: "172.20.0.0/16"
+    required: false
+    group: 网络配置
+
+  - name: RESTART_POLICY
+    label: 重启策略
+    type: select
+    default: "unless-stopped"
+    required: true
+    options: ["no", "always", "on-failure", "unless-stopped"]
+    group: 基础配置
+
+  - name: TIMEZONE
+    label: 时区
+    type: string
+    default: "Asia/Shanghai"
+    required: true
+    group: 基础配置
+
+  - name: DATA_BASE_DIR
+    label: 数据根目录
+    type: string
+    default: "/data/itcfg"
+    required: true
+    group: 存储配置
+
+  - name: LOG_BASE_DIR
+    label: 日志根目录
+    type: string
+    default: "/var/log/itcfg"
+    required: false
+    group: 日志配置
+
+  - name: ENABLE_NGINX
+    label: 启用 Nginx
+    type: boolean
+    default: "true"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_JAVA_APP
+    label: 启用 Java 应用
+    type: boolean
+    default: "true"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_POSTGRESQL
+    label: 启用 PostgreSQL
+    type: boolean
+    default: "true"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_REDIS
+    label: 启用 Redis
+    type: boolean
+    default: "true"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_MINIO
+    label: 启用 MinIO
+    type: boolean
+    default: "true"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_KAFKA
+    label: 启用 Kafka
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_ETCD
+    label: 启用 Etcd
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_MONGODB
+    label: 启用 MongoDB
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_ELASTICSEARCH
+    label: 启用 Elasticsearch
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_ONLYOFFICE
+    label: 启用 OnlyOffice
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_COLLABORA
+    label: 启用 Collabora Code
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_FILE_VIEWER
+    label: 启用 File Viewer
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关
+
+  - name: ENABLE_FILECODEBOX
+    label: 启用 FileCodeBox
+    type: boolean
+    default: "false"
+    required: false
+    group: 组件开关

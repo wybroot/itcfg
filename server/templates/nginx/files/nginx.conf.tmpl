@@ -1,0 +1,43 @@
+user  nginx;
+worker_processes  {{.WORKER_PROCESSES}};
+
+error_log  {{.LOG_DIR}}/error.log warn;
+pid        /var/run/nginx.pid;
+
+events {
+    worker_connections  {{.WORKER_CONNECTIONS}};
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  {{.LOG_DIR}}/access.log  main;
+
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+
+    keepalive_timeout  {{.KEEPALIVE_TIMEOUT}};
+
+    {{if eq .GZIP_ENABLED "true"}}
+    gzip  on;
+    gzip_min_length  1k;
+    gzip_comp_level  6;
+    gzip_types       text/plain text/css text/javascript application/json
+                     application/javascript application/xml application/xml+rss;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_disable "msie6";
+    {{end}}
+
+    client_max_body_size {{.CLIENT_MAX_BODY_SIZE}};
+
+    include /etc/nginx/conf.d/*.conf;
+}

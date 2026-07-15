@@ -1,0 +1,124 @@
+variables:
+  - name: WORKER_PROCESSES
+    label: Worker 进程数
+    type: number
+    default: "4"
+    required: true
+    min: 1
+    max: 64
+    group: 基础配置
+    description: Nginx worker 进程数量，建议设置为 CPU 核心数
+
+  - name: WORKER_CONNECTIONS
+    label: 每个 Worker 最大连接数
+    type: number
+    default: "1024"
+    required: true
+    min: 128
+    max: 65535
+    group: 基础配置
+
+  - name: HTTP_PORT
+    label: HTTP 监听端口
+    type: number
+    default: "80"
+    required: true
+    min: 1
+    max: 65535
+    group: 基础配置
+    description: Nginx 对外提供的 HTTP 访问端口
+
+  - name: HTTPS_PORT
+    label: HTTPS 监听端口
+    type: number
+    default: "443"
+    required: false
+    min: 1
+    max: 65535
+    group: 基础配置
+
+  - name: SERVER_NAME
+    label: 服务域名
+    type: string
+    default: "_"
+    required: true
+    regex: "^[a-zA-Z0-9._-]+$"
+    group: 基础配置
+    description: 访问该服务的域名或 IP 地址
+
+  - name: CLIENT_MAX_BODY_SIZE
+    label: 上传文件大小限制
+    type: select
+    default: "100m"
+    required: true
+    options:
+      - "10m"
+      - "50m"
+      - "100m"
+      - "200m"
+      - "500m"
+      - "1g"
+    group: 性能配置
+
+  - name: BACKEND_HOST
+    label: 后端服务地址
+    type: string
+    default: "127.0.0.1"
+    required: true
+    group: 后端连接
+    linked_to: java-app.SERVER_HOST
+    description: Java 后端服务的 IP 地址或容器名
+
+  - name: BACKEND_PORT
+    label: 后端服务端口
+    type: number
+    default: "8080"
+    required: true
+    min: 1
+    max: 65535
+    group: 后端连接
+    linked_to: java-app.SERVER_PORT
+
+  - name: ENABLE_HTTPS
+    label: 启用 HTTPS
+    type: boolean
+    default: "false"
+    required: false
+    group: 安全配置
+
+  - name: SSL_CERT_PATH
+    label: SSL 证书路径
+    type: string
+    default: "/etc/nginx/ssl/server.crt"
+    required: false
+    group: 安全配置
+
+  - name: SSL_KEY_PATH
+    label: SSL 私钥路径
+    type: string
+    default: "/etc/nginx/ssl/server.key"
+    required: false
+    group: 安全配置
+
+  - name: LOG_DIR
+    label: 日志目录
+    type: string
+    default: "/var/log/nginx"
+    required: false
+    group: 日志配置
+
+  - name: KEEPALIVE_TIMEOUT
+    label: Keepalive 超时时间(秒)
+    type: number
+    default: "65"
+    required: false
+    min: 1
+    max: 600
+    group: 性能配置
+
+  - name: GZIP_ENABLED
+    label: 启用 Gzip 压缩
+    type: boolean
+    default: "true"
+    required: false
+    group: 性能配置

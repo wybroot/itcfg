@@ -1,0 +1,11 @@
+-Xms{{.JVM_MIN_HEAP}}
+-Xmx{{.JVM_MAX_HEAP}}
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath={{.LOG_DIR}}/heapdump.hprof
+-XX:+PrintGCDetails
+-XX:+PrintGCDateStamps
+-Xloggc:{{.LOG_DIR}}/gc.log
+-Dfile.encoding=UTF-8
+-Djava.security.egd=file:/dev/./urandom

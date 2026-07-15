@@ -1,0 +1,10 @@
+name: redis
+display_name: Redis 缓存服务
+description: 高性能内存缓存数据库
+category: cache
+output_dir: /opt/itcfg/redis
+config_files:
+  - path: redis.conf.tmpl
+    target: /etc/redis/redis.conf
+    owner: redis
+    mode: "0640"

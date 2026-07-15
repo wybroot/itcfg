@@ -1,0 +1,74 @@
+variables:
+  - name: SERVER_PORT
+    label: 服务端口
+    type: number
+    default: "8082"
+    required: true
+    min: 1
+    max: 65535
+    group: 基础配置
+
+  - name: UPLOAD_DIR
+    label: 上传目录
+    type: string
+    default: "/data/uploads"
+    required: true
+    group: 存储配置
+
+  - name: MAX_FILE_SIZE
+    label: 最大文件大小(MB)
+    type: number
+    default: "500"
+    required: false
+    min: 1
+    max: 10240
+    group: 性能配置
+
+  - name: FILE_EXPIRE_HOURS
+    label: 文件过期时间(小时)
+    type: number
+    default: "72"
+    required: false
+    min: 1
+    max: 720
+    group: 基础配置
+
+  - name: DB_HOST
+    label: 数据库主机
+    type: string
+    default: "127.0.0.1"
+    required: true
+    group: 数据库连接
+
+  - name: DB_PORT
+    label: 数据库端口
+    type: number
+    default: "5432"
+    required: true
+    group: 数据库连接
+
+  - name: DB_NAME
+    label: 数据库名称
+    type: string
+    default: "filecodebox"
+    required: true
+    group: 数据库连接
+
+  - name: DB_USER
+    label: 数据库用户名
+    type: string
+    default: "filecodebox"
+    required: true
+    group: 数据库连接
+
+  - name: DB_PASSWORD
+    label: 数据库密码
+    type: password
+    required: true
+    group: 数据库连接
+
+  - name: ADMIN_PASSWORD
+    label: 管理员密码
+    type: password
+    required: true
+    group: 安全配置

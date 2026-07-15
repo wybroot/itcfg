@@ -1,0 +1,14 @@
+name: {{.NODE_NAME}}
+data-dir: {{.DATA_DIR}}
+listen-client-urls: {{.LISTEN_CLIENT_URLS}}
+advertise-client-urls: {{.ADVERTISE_CLIENT_URLS}}
+listen-peer-urls: http://0.0.0.0:{{.PEER_PORT}}
+initial-advertise-peer-urls: http://{{.NODE_NAME}}:{{.PEER_PORT}}
+initial-cluster-token: {{.INITIAL_CLUSTER_TOKEN}}
+initial-cluster: {{.NODE_NAME}}=http://{{.NODE_NAME}}:{{.PEER_PORT}}
+initial-cluster-state: new
+snapshot-count: {{.SNAPSHOT_COUNT}}
+enable-pprof: false
+logger: zap
+log-level: info
+log-outputs: [stderr]

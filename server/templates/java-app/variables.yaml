@@ -1,0 +1,137 @@
+variables:
+  - name: SERVER_PORT
+    label: 服务端口
+    type: number
+    default: "8080"
+    required: true
+    min: 1
+    max: 65535
+    group: 服务配置
+
+  - name: SERVER_HOST
+    label: 服务绑定地址
+    type: string
+    default: "0.0.0.0"
+    required: true
+    group: 服务配置
+
+  - name: DB_HOST
+    label: 数据库主机
+    type: string
+    default: "127.0.0.1"
+    required: true
+    group: 数据库连接
+    linked_to: postgresql.LISTEN_ADDRESS
+
+  - name: DB_PORT
+    label: 数据库端口
+    type: number
+    default: "5432"
+    required: true
+    min: 1
+    max: 65535
+    group: 数据库连接
+    linked_to: postgresql.PORT
+
+  - name: DB_NAME
+    label: 数据库名称
+    type: string
+    default: "itcfg"
+    required: true
+    group: 数据库连接
+
+  - name: DB_USERNAME
+    label: 数据库用户名
+    type: string
+    default: "itcfg"
+    required: true
+    group: 数据库连接
+
+  - name: DB_PASSWORD
+    label: 数据库密码
+    type: password
+    required: true
+    group: 数据库连接
+
+  - name: REDIS_HOST
+    label: Redis 主机
+    type: string
+    default: "127.0.0.1"
+    required: true
+    group: Redis 连接
+    linked_to: redis.BIND_ADDRESS
+
+  - name: REDIS_PORT
+    label: Redis 端口
+    type: number
+    default: "6379"
+    required: true
+    min: 1
+    max: 65535
+    group: Redis 连接
+    linked_to: redis.PORT
+
+  - name: REDIS_PASSWORD
+    label: Redis 密码
+    type: password
+    required: false
+    group: Redis 连接
+
+  - name: JVM_MIN_HEAP
+    label: JVM 最小堆内存
+    type: string
+    default: "512m"
+    required: true
+    options: ["256m", "512m", "1g", "2g", "4g", "8g"]
+    group: JVM 配置
+
+  - name: JVM_MAX_HEAP
+    label: JVM 最大堆内存
+    type: string
+    default: "1g"
+    required: true
+    options: ["512m", "1g", "2g", "4g", "8g", "16g"]
+    group: JVM 配置
+
+  - name: LOG_LEVEL
+    label: 日志级别
+    type: select
+    default: "INFO"
+    required: true
+    options: ["DEBUG", "INFO", "WARN", "ERROR"]
+    group: 日志配置
+
+  - name: LOG_DIR
+    label: 日志目录
+    type: string
+    default: "/opt/java-app/logs"
+    required: false
+    group: 日志配置
+
+  - name: KAFKA_BOOTSTRAP
+    label: Kafka 地址
+    type: string
+    default: ""
+    required: false
+    group: 消息队列
+    linked_to: kafka.LISTENERS
+
+  - name: MINIO_ENDPOINT
+    label: MinIO 地址
+    type: string
+    default: ""
+    required: false
+    group: 对象存储
+    linked_to: minio.API_ENDPOINT
+
+  - name: MINIO_ACCESS_KEY
+    label: MinIO Access Key
+    type: string
+    required: false
+    group: 对象存储
+
+  - name: MINIO_SECRET_KEY
+    label: MinIO Secret Key
+    type: password
+    required: false
+    group: 对象存储

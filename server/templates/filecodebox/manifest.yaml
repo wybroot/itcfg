@@ -1,0 +1,10 @@
+name: filecodebox
+display_name: FileCodeBox 文件快递柜
+description: 匿名文件分享和收集服务
+category: file-service
+output_dir: /opt/itcfg/filecodebox
+config_files:
+  - path: config.env.tmpl
+    target: /opt/filecodebox/.env
+    owner: appuser
+    mode: "0640"

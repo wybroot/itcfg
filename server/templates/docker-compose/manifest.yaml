@@ -1,0 +1,14 @@
+name: docker-compose
+display_name: Docker Compose 编排
+description: 整体 Docker Compose 编排文件，统一管理所有服务容器
+category: orchestration
+output_dir: /opt/itcfg
+config_files:
+  - path: docker-compose.yml.tmpl
+    target: /opt/itcfg/docker-compose.yml
+    owner: root
+    mode: "0644"
+  - path: env.sh.tmpl
+    target: /opt/itcfg/configs/env.sh
+    owner: root
+    mode: "0644"
