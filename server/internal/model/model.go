@@ -104,3 +104,13 @@ type DeployRecord struct {
 	Status            string    `gorm:"type:varchar(32);default:pending" json:"status"`
 	Notes             string    `gorm:"type:text" json:"notes"`
 }
+
+// ConfigVersion 配置版本快照
+type ConfigVersion struct {
+	BaseModel
+	CustomerEnvID   uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_env_id"`
+	Version         int       `gorm:"not null" json:"version"`
+	ConfigSnapshot  string    `gorm:"type:jsonb;not null" json:"config_snapshot"`
+	CreatedBy       string    `gorm:"type:varchar(64)" json:"created_by"`
+	ChangeSummary   string    `gorm:"type:text" json:"change_summary"`
+}

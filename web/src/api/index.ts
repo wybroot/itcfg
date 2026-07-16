@@ -67,3 +67,21 @@ export const createDeployRecord = (envId: string, data: {
   status?: string
   notes?: string
 }) => api.post(`/envs/${envId}/deploy-records`, data)
+
+// ==================== 配置版本 API ====================
+
+export const getVersions = (envId: string) => api.get(`/envs/${envId}/versions`)
+
+export const createSnapshot = (envId: string, data: { created_by?: string; change_summary?: string }) =>
+  api.post(`/envs/${envId}/versions/snapshot`, data)
+
+export const diffVersions = (envId: string, from: number, to: number) =>
+  api.get(`/envs/${envId}/versions/diff`, { params: { from, to } })
+
+export const rollbackVersion = (envId: string, data: { target_version: number; operator?: string }) =>
+  api.post(`/envs/${envId}/versions/rollback`, data)
+
+// ==================== 配置克隆 API ====================
+
+export const cloneConfigs = (envId: string, data: { from_env_id: string; updated_by?: string }) =>
+  api.post(`/envs/${envId}/configs/clone`, data)

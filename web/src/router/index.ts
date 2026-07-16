@@ -38,6 +38,11 @@ const router = createRouter({
       name: 'DeployRecords',
       component: () => import('../views/DeployRecords.vue'),
     },
+    {
+      path: '/envs/:envId/versions',
+      name: 'VersionHistory',
+      component: () => import('../views/VersionHistory.vue'),
+    },
   ],
 })
 

@@ -35,6 +35,7 @@ func (d *Database) AutoMigrate() error {
 		&model.CustomerConfigValue{},
 		&model.ComponentArtifactVersion{},
 		&model.DeployRecord{},
+		&model.ConfigVersion{},
 	)
 }
 
@@ -227,4 +228,64 @@ func (r *DeployRecordRepo) ListByEnv(envID string) ([]model.DeployRecord, error)
 
 func (r *DeployRecordRepo) Create(record *model.DeployRecord) error {
 	return r.db.Create(record).Error
+}
+
+// ==================== 配置版本 Repository ====================
+
+type ConfigVersionRepo struct {
+	db *gorm.DB
+}
+
+func NewConfigVersionRepo(db *gorm.DB) *ConfigVersionRepo {
+	return &ConfigVersionRepo{db: db}
+}
+
+func (r *ConfigVersionRepo) ListByEnv(envID string) ([]model.ConfigVersion, error) {
+	var versions []model.ConfigVersion
+	err := r.db.Where("customer_env_id = ?", envID).
+		Order("version DESC").Limit(50).Find(&versions).Error
+	return versions, err
+}
+
+func (r *ConfigVersionRepo) GetByEnvAndVersion(envID string, version int) (*model.ConfigVersion, error) {
+	var v model.ConfigVersion
+	err := r.db.Where("customer_env_id = ? AND version = ?", envID, version).First(&v).Error
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func (r *ConfigVersionRepo) GetLatestVersion(envID string) (int, error) {
+	var v model.ConfigVersion
+	err := r.db.Where("customer_env_id = ?", envID).
+		Order("version DESC").First(&v).Error
+	if err == gorm.ErrRecordNotFound {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return v.Version, nil
+}
+
+func (r *ConfigVersionRepo) Create(version *model.ConfigVersion) error {
+	return r.db.Create(version).Error
+}
+
+// ==================== 配置克隆 Repository ====================
+
+func (r *ConfigValueRepo) CloneConfigs(fromEnvID, toEnvID string, updatedBy string) error {
+	// 获取源环境的配置
+	fromConfigs, err := r.GetByEnv(fromEnvID)
+	if err != nil {
+		return err
+	}
+
+	values := make(map[string]string)
+	for _, cfg := range fromConfigs {
+		values[cfg.VariableID.String()] = cfg.VarValue
+	}
+
+	return r.BatchUpsert(toEnvID, values, updatedBy)
 }

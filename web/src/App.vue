@@ -64,6 +64,7 @@ const route = useRoute()
 const activeMenu = computed(() => route.path)
 
 const pageTitle = computed(() => {
+  const path = route.path
   const titles: Record<string, string> = {
     '/': '首页',
     '/customers': '客户管理',
@@ -71,7 +72,11 @@ const pageTitle = computed(() => {
     '/templates': '模板管理',
     '/deploy-records': '部署记录',
   }
-  return titles[route.path] || 'ITCFG 配置中台'
+  if (titles[path]) return titles[path]
+  if (path.includes('/envs/') && path.endsWith('/configs')) return '配置管理'
+  if (path.includes('/envs/') && path.endsWith('/versions')) return '配置版本历史'
+  if (path.includes('/customers/') && path.endsWith('/envs')) return '客户环境'
+  return 'ITCFG 配置中台'
 })
 </script>
 

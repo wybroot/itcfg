@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"itcfg/server/internal/model"
@@ -23,6 +24,7 @@ type Handler struct {
 	deployRecordSvc  *service.DeployRecordService
 	templateEngine   *template.Engine
 	packageExporter  *service.PackageExporter
+	versionSvc       *service.ConfigVersionService
 }
 
 // NewHandler 创建处理器
@@ -34,6 +36,7 @@ func NewHandler(
 	deployRecordSvc *service.DeployRecordService,
 	templateEngine *template.Engine,
 	packageExporter *service.PackageExporter,
+	versionSvc *service.ConfigVersionService,
 ) *Handler {
 	return &Handler{
 		customerSvc:     customerSvc,
@@ -43,6 +46,7 @@ func NewHandler(
 		deployRecordSvc: deployRecordSvc,
 		templateEngine:  templateEngine,
 		packageExporter: packageExporter,
+		versionSvc:      versionSvc,
 	}
 }
 
@@ -74,6 +78,15 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		// 部署记录
 		api.GET("/envs/:envId/deploy-records", h.ListDeployRecords)
 		api.POST("/envs/:envId/deploy-records", h.CreateDeployRecord)
+
+		// 配置版本管理
+		api.GET("/envs/:envId/versions", h.ListVersions)
+		api.POST("/envs/:envId/versions/snapshot", h.CreateSnapshot)
+		api.GET("/envs/:envId/versions/diff", h.DiffVersions)
+		api.POST("/envs/:envId/versions/rollback", h.RollbackVersion)
+
+		// 配置克隆
+		api.POST("/envs/:envId/configs/clone", h.CloneConfigs)
 
 		// Agent 接口
 		api.POST("/agent/auth", h.AgentAuth)
@@ -390,6 +403,116 @@ func (h *Handler) AgentAuth(c *gin.Context) {
 			"authenticated": true,
 		},
 	})
+}
+
+// ==================== 配置版本管理 Handler ====================
+
+func (h *Handler) ListVersions(c *gin.Context) {
+	envID := c.Param("envId")
+	versions, err := h.versionSvc.ListByEnv(envID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": versions})
+}
+
+type CreateSnapshotRequest struct {
+	CreatedBy     string `json:"created_by"`
+	ChangeSummary string `json:"change_summary"`
+}
+
+func (h *Handler) CreateSnapshot(c *gin.Context) {
+	envID := c.Param("envId")
+	var req CreateSnapshotRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.CreatedBy == "" {
+		req.CreatedBy = "system"
+	}
+
+	version, err := h.versionSvc.SaveSnapshot(envID, req.CreatedBy, req.ChangeSummary)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"data": version})
+}
+
+func (h *Handler) DiffVersions(c *gin.Context) {
+	envID := c.Param("envId")
+	fromVersion, _ := strconv.Atoi(c.Query("from"))
+	toVersion, _ := strconv.Atoi(c.Query("to"))
+
+	if fromVersion == 0 || toVersion == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请指定 from 和 to 版本号"})
+		return
+	}
+
+	diff, err := h.versionSvc.Diff(envID, fromVersion, toVersion)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": diff})
+}
+
+type RollbackRequest struct {
+	TargetVersion int    `json:"target_version" binding:"required"`
+	Operator      string `json:"operator"`
+}
+
+func (h *Handler) RollbackVersion(c *gin.Context) {
+	envID := c.Param("envId")
+	var req RollbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Operator == "" {
+		req.Operator = "system"
+	}
+
+	if err := h.versionSvc.Rollback(envID, req.TargetVersion, req.Operator); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已回滚到版本 %d", req.TargetVersion)})
+}
+
+// ==================== 配置克隆 Handler ====================
+
+type CloneConfigsRequest struct {
+	FromEnvID string `json:"from_env_id" binding:"required"`
+	UpdatedBy string `json:"updated_by"`
+}
+
+func (h *Handler) CloneConfigs(c *gin.Context) {
+	toEnvID := c.Param("envId")
+	var req CloneConfigsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.UpdatedBy == "" {
+		req.UpdatedBy = "system"
+	}
+
+	// 克隆配置
+	if err := h.configSvc.CloneConfigs(req.FromEnvID, toEnvID, req.UpdatedBy); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("克隆失败: %v", err)})
+		return
+	}
+
+	// 自动保存快照
+	_, _ = h.versionSvc.SaveSnapshot(toEnvID, req.UpdatedBy, fmt.Sprintf("从环境 %s 克隆配置", req.FromEnvID))
+
+	c.JSON(http.StatusOK, gin.H{"message": "配置克隆成功"})
 }
 
 func (h *Handler) AgentGetConfigs(c *gin.Context) {

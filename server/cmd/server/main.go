@@ -40,12 +40,16 @@ func main() {
 	configValueRepo := repository.NewConfigValueRepo(db.DB)
 	deployRecordRepo := repository.NewDeployRecordRepo(db.DB)
 
+	// 初始化 Repository
+	configVersionRepo := repository.NewConfigVersionRepo(db.DB)
+
 	// 初始化 Service
 	customerSvc := service.NewCustomerService(customerRepo)
 	envSvc := service.NewEnvService(envRepo)
 	componentSvc := service.NewComponentService(componentRepo)
 	configSvc := service.NewConfigService(configValueRepo)
 	deployRecordSvc := service.NewDeployRecordService(deployRecordRepo)
+	versionSvc := service.NewConfigVersionService(configVersionRepo, configValueRepo)
 
 	// 初始化模板引擎
 	templateDir := os.Getenv("TEMPLATE_DIR")
@@ -66,7 +70,7 @@ func main() {
 
 	// 初始化 Handler
 	h := handler.NewHandler(
-		customerSvc, envSvc, componentSvc, configSvc, deployRecordSvc, templateEngine, packageExporter,
+		customerSvc, envSvc, componentSvc, configSvc, deployRecordSvc, templateEngine, packageExporter, versionSvc,
 	)
 
 	// 初始化 Gin

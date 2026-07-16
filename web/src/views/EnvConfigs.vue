@@ -11,6 +11,9 @@
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>组件配置</span>
           <el-space>
+            <el-button type="info" @click="$router.push(`/envs/${envId}/versions`)">
+              <el-icon><Clock /></el-icon> 版本历史
+            </el-button>
             <el-button type="primary" @click="previewConfig">
               <el-icon><View /></el-icon> 预览配置
             </el-button>
