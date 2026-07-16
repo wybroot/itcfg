@@ -158,3 +158,51 @@ func (e *Engine) BuildValues(componentName string, configValues map[string]strin
 	}
 	return values, nil
 }
+
+// TemplateInfo 模板摘要信息
+type TemplateInfo struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	OutputDir   string `json:"output_dir"`
+	FileCount   int    `json:"file_count"`
+	VarCount    int    `json:"var_count"`
+}
+
+// ListTemplates 列出所有可用的组件模板
+func (e *Engine) ListTemplates() ([]TemplateInfo, error) {
+	entries, err := os.ReadDir(e.baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取模板目录失败: %w", err)
+	}
+
+	var templates []TemplateInfo
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		manifest, err := e.LoadManifest(entry.Name())
+		if err != nil {
+			continue // 跳过没有 manifest 的目录
+		}
+
+		vars, err := e.LoadVariables(entry.Name())
+		varCount := 0
+		if err == nil {
+			varCount = len(vars.Variables)
+		}
+
+		templates = append(templates, TemplateInfo{
+			Name:        manifest.Name,
+			DisplayName: manifest.DisplayName,
+			Description: manifest.Description,
+			Category:    manifest.Category,
+			OutputDir:   manifest.OutputDir,
+			FileCount:   len(manifest.ConfigFiles),
+			VarCount:    varCount,
+		})
+	}
+	return templates, nil
+}

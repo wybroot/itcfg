@@ -176,9 +176,38 @@ func (v *Validator) checkPorts() []CheckResult {
 
 // CheckHealth 健康检查
 func (v *Validator) CheckHealth() error {
-	// TODO: 检查各服务健康状态
-	// 通过 docker-compose ps 检查容器状态
-	// 通过 HTTP 请求检查各服务接口
+	// 检查 docker-compose 服务状态
+	dockerComposeFile := filepath.Join(v.configDir, "docker-compose.yml")
+	if _, err := os.Stat(dockerComposeFile); os.IsNotExist(err) {
+		return fmt.Errorf("docker-compose.yml 不存在，服务可能未部署")
+	}
+
+	// 检查 docker 是否可用
+	if _, err := exec.LookPath("docker"); err != nil {
+		return fmt.Errorf("docker 未安装")
+	}
+
+	// 检查关键容器状态
+	cmd := exec.Command("docker", "compose", "-f", dockerComposeFile, "ps", "--format", "json")
+	output, err := cmd.Output()
+	if err != nil {
+		// 尝试旧版命令
+		cmd = exec.Command("docker-compose", "-f", dockerComposeFile, "ps", "-q")
+		output, err = cmd.Output()
+		if err != nil {
+			return fmt.Errorf("无法获取服务状态: %w", err)
+		}
+	}
+
+	containers := strings.TrimSpace(string(output))
+	if containers == "" {
+		return fmt.Errorf("没有运行中的服务容器")
+	}
+
+	if v.verbose {
+		fmt.Printf("  运行中的容器:\n%s\n", containers)
+	}
+
 	return nil
 }
 

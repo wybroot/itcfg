@@ -90,6 +90,10 @@ export const createEnv = (customerId: string, data: { env_name: string; env_key:
 export const deleteEnv = (customerId: string, envId: string) =>
   api.delete(`/customers/${customerId}/envs/${envId}`)
 
+// ==================== 模板 API ====================
+
+export const getTemplates = () => api.get('/templates')
+
 // ==================== 组件 API ====================
 
 export const getComponents = () => api.get('/components')

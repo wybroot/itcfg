@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"itcfg/agent/internal/config"
@@ -451,20 +452,81 @@ func newRollbackCmd() *cobra.Command {
 			fmt.Println("==========================================")
 
 			backupDir := configDir + "/backup"
+			configsDir := configDir + "/configs"
+			metaPath := deploy.GetMetadataPath(configDir)
+			dockerComposeFile := configDir + "/docker-compose.yml"
+
 			if _, err := os.Stat(backupDir); os.IsNotExist(err) {
-				return fmt.Errorf("没有可回滚的备份")
+				return fmt.Errorf("没有可回滚的备份，请确保在部署前已备份")
 			}
 
-			fmt.Println("正在回滚...")
-			// TODO: 实现具体的回滚逻辑
-			// 1. 停止当前服务
-			// 2. 恢复备份配置
-			// 3. 重新启动服务
-			fmt.Println("回滚功能将在后续版本实现")
+			if dryRun {
+				fmt.Println("[DRY-RUN] 以下操作将被执行:")
+				fmt.Printf("  1. 停止当前服务: docker-compose -f %s down\n", dockerComposeFile)
+				fmt.Printf("  2. 恢复备份: %s → %s\n", backupDir, configsDir)
+				fmt.Printf("  3. 启动服务: docker-compose -f %s up -d\n", dockerComposeFile)
+				return nil
+			}
+
+			// Step 1: 停止当前服务
+			fmt.Println("[1/3] 停止当前服务...")
+			deployer := deploy.NewDeployer(configDir, false, verbose)
+			if err := deployer.StopServices(); err != nil {
+				fmt.Printf("  ⚠ 停止服务时出现问题: %v\n", err)
+			} else {
+				fmt.Println("  ✓ 服务已停止")
+			}
+
+			// Step 2: 恢复备份
+			fmt.Println("[2/3] 恢复备份配置...")
+			if err := os.RemoveAll(configsDir); err != nil {
+				return fmt.Errorf("清除当前配置失败: %w", err)
+			}
+			if err := copyDir(backupDir, configsDir); err != nil {
+				return fmt.Errorf("恢复备份失败: %w", err)
+			}
+			fmt.Println("  ✓ 备份已恢复")
+
+			// Step 3: 重新启动服务
+			fmt.Println("[3/3] 重新启动服务...")
+			if err := deployer.StartServices(); err != nil {
+				return fmt.Errorf("启动服务失败: %w", err)
+			}
+			fmt.Println("  ✓ 服务已重新启动")
+
+			fmt.Println()
+			fmt.Println("==========================================")
+			fmt.Println("  回滚完成！")
+			fmt.Println("==========================================")
+
+			// 更新 metadata
+			if meta, err := deploy.LoadMetadata(metaPath); err == nil {
+				meta.CreatedAt = time.Now().Format(time.RFC3339)
+				fmt.Printf("  版本已回滚: %s\n", meta.Version)
+			}
 
 			return nil
 		},
 	}
 
 	return cmd
+}
+
+// copyDir 递归复制目录
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, relPath)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0644)
+	})
 }

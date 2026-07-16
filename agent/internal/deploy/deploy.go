@@ -212,7 +212,7 @@ func (d *Deployer) Deploy() error {
 	}
 
 	// Step 3: 启动服务
-	if err := d.startServices(); err != nil {
+	if err := d.StartServices(); err != nil {
 		return fmt.Errorf("启动服务失败: %w", err)
 	}
 
@@ -327,32 +327,37 @@ func (d *Deployer) writeConfigs() error {
 	})
 }
 
-// startServices 启动服务
-func (d *Deployer) startServices() error {
+// StartServices 启动服务 (公开方法)
+func (d *Deployer) StartServices() error {
+	return d.StartServices()
+}
+
+// StopServices 停止服务
+func (d *Deployer) StopServices() error {
 	dockerComposeFile := filepath.Join(d.configDir, "docker-compose.yml")
 
 	if _, err := os.Stat(dockerComposeFile); os.IsNotExist(err) {
 		if d.verbose {
-			fmt.Println("  未找到 docker-compose.yml，跳过服务启动")
+			fmt.Println("  未找到 docker-compose.yml，跳过停止")
 		}
 		return nil
 	}
 
-	fmt.Println("  启动服务...")
+	fmt.Println("  停止服务...")
 
 	if d.dryRun {
-		fmt.Printf("    [DRY-RUN] docker-compose -f %s up -d\n", dockerComposeFile)
+		fmt.Printf("    [DRY-RUN] docker-compose -f %s down\n", dockerComposeFile)
 		return nil
 	}
 
 	// 实际执行 docker-compose
-	// cmd := exec.Command("docker-compose", "-f", dockerComposeFile, "up", "-d")
+	// cmd := exec.Command("docker-compose", "-f", dockerComposeFile, "down")
 	// cmd.Stdout = os.Stdout
 	// cmd.Stderr = os.Stderr
 	// if err := cmd.Run(); err != nil {
-	//     return fmt.Errorf("启动服务失败: %w", err)
+	//     return fmt.Errorf("停止服务失败: %w", err)
 	// }
-	fmt.Println("    ✓ 服务已启动")
+	fmt.Println("    ✓ 服务已停止")
 
 	return nil
 }

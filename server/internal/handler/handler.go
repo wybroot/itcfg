@@ -99,6 +99,9 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
 		api.POST("/customers/:id/envs", h.CreateEnv)
 		api.DELETE("/customers/:id/envs/:envId", h.DeleteEnv)
 
+		// 模板管理
+		api.GET("/templates", h.ListTemplates)
+
 		// 组件管理
 		api.GET("/components", h.ListComponents)
 		api.GET("/components/:id/variables", h.GetComponentVariables)
@@ -296,6 +299,17 @@ func (h *Handler) DeleteEnv(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+// ==================== 模板 Handler ====================
+
+func (h *Handler) ListTemplates(c *gin.Context) {
+	templates, err := h.templateEngine.ListTemplates()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": templates})
 }
 
 // ==================== 组件 Handler ====================
