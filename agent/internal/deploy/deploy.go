@@ -168,16 +168,37 @@ func NewDeployer(configDir string, dryRun, verbose bool) *Deployer {
 	}
 }
 
-// Deploy 执行部署
+// Deploy 执行部署（自动检测离线/在线模式）
 func (d *Deployer) Deploy() error {
 	metaPath := GetMetadataPath(d.configDir)
-	if _, err := os.Stat(metaPath); os.IsNotExist(err) {
-		return fmt.Errorf("未找到部署包，请先执行 'config-agent import'")
+	configsDir := d.configDir + "/configs"
+	hasMeta := false
+	hasConfigs := false
+
+	if _, err := os.Stat(metaPath); err == nil {
+		hasMeta = true
+	}
+	if _, err := os.Stat(configsDir); err == nil {
+		hasConfigs = true
 	}
 
-	meta, err := LoadMetadata(metaPath)
-	if err != nil {
-		return err
+	if !hasMeta && !hasConfigs {
+		return fmt.Errorf("未找到部署包或配置，请先执行 'config-agent import' (离线) 或 'config-agent login && config-agent pull' (在线)")
+	}
+
+	if hasMeta {
+		meta, err := LoadMetadata(metaPath)
+		if err != nil {
+			return err
+		}
+		if d.verbose {
+			fmt.Printf("模式: 离线部署\n")
+			fmt.Printf("  客户: %s  环境: %s  版本: %s\n", meta.Customer, meta.Env, meta.Version)
+		}
+	} else {
+		if d.verbose {
+			fmt.Println("模式: 在线部署")
+		}
 	}
 
 	// Step 1: 导入 Docker 镜像
@@ -195,7 +216,6 @@ func (d *Deployer) Deploy() error {
 		return fmt.Errorf("启动服务失败: %w", err)
 	}
 
-	_ = meta // 可用于日志输出
 	return nil
 }
 

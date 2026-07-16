@@ -111,27 +111,30 @@ go build -o config-agent cmd/agent/main.go
 
 ## 组件模板
 
-已支持的组件模板：
+已支持的组件模板（14 个全部就绪）：
 
 - [x] Nginx
 - [x] Java App (Spring Boot)
 - [x] PostgreSQL
-- [ ] Redis
-- [ ] MinIO
-- [ ] Kafka
-- [ ] Etcd
-- [ ] MongoDB
-- [ ] OnlyOffice
-- [ ] Elasticsearch
-- [ ] Collabora Code
-- [ ] File Viewer
-- [ ] FileCodeBox
+- [x] Redis
+- [x] MinIO
+- [x] Kafka
+- [x] Etcd
+- [x] MongoDB
+- [x] OnlyOffice
+- [x] Elasticsearch
+- [x] Collabora Code
+- [x] File Viewer
+- [x] FileCodeBox
+- [x] Docker Compose
 
 ## 实施路线
 
-- **一期 MVP（当前）：** 配置中台 + Agent 最小闭环，支持 3 个核心组件
-- **二期：** 完整 14 组件模板、制品版本关联、Agent 在线模式
-- **三期：** RBAC、加密、健康检查、通知
+| 阶段 | 功能 | 状态 |
+|------|------|------|
+| 一期 MVP | 配置中台 + Agent 最小闭环 + 核心组件模板 | ✅ |
+| 二期 | 制品版本关联 + Agent 在线模式 + 版本管理/回滚/差异对比 + 配置克隆 | ✅ |
+| 三期 | JWT 认证 + 用户管理 + 加密存储 + 配置校验 + 健康检查 + 钉钉/企微通知 + Swagger | ✅ |
 
 ## 文档
 

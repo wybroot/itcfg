@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	"itcfg/server/internal/auth"
 	"itcfg/server/internal/model"
+	"itcfg/server/internal/notify"
 	"itcfg/server/internal/service"
 	"itcfg/server/internal/template"
 
@@ -17,14 +19,17 @@ import (
 
 // Handler 统一处理器
 type Handler struct {
-	customerSvc      *service.CustomerService
-	envSvc           *service.EnvService
-	componentSvc     *service.ComponentService
-	configSvc        *service.ConfigService
-	deployRecordSvc  *service.DeployRecordService
-	templateEngine   *template.Engine
-	packageExporter  *service.PackageExporter
-	versionSvc       *service.ConfigVersionService
+	customerSvc        *service.CustomerService
+	envSvc             *service.EnvService
+	componentSvc       *service.ComponentService
+	configSvc          *service.ConfigService
+	deployRecordSvc    *service.DeployRecordService
+	templateEngine     *template.Engine
+	packageExporter    *service.PackageExporter
+	versionSvc         *service.ConfigVersionService
+	artifactVersionSvc *service.ArtifactVersionService
+	authSvc            *auth.UserService
+	notifySvc          *notify.Service
 }
 
 // NewHandler 创建处理器
@@ -37,23 +42,52 @@ func NewHandler(
 	templateEngine *template.Engine,
 	packageExporter *service.PackageExporter,
 	versionSvc *service.ConfigVersionService,
+	artifactVersionSvc *service.ArtifactVersionService,
+	authSvc *auth.UserService,
+	notifySvc *notify.Service,
 ) *Handler {
 	return &Handler{
-		customerSvc:     customerSvc,
-		envSvc:          envSvc,
-		componentSvc:    componentSvc,
-		configSvc:       configSvc,
-		deployRecordSvc: deployRecordSvc,
-		templateEngine:  templateEngine,
-		packageExporter: packageExporter,
-		versionSvc:      versionSvc,
+		customerSvc:        customerSvc,
+		envSvc:             envSvc,
+		componentSvc:       componentSvc,
+		configSvc:          configSvc,
+		deployRecordSvc:    deployRecordSvc,
+		templateEngine:     templateEngine,
+		packageExporter:    packageExporter,
+		versionSvc:         versionSvc,
+		artifactVersionSvc: artifactVersionSvc,
+		authSvc:            authSvc,
+		notifySvc:          notifySvc,
 	}
 }
 
 // RegisterRoutes 注册路由
-func (h *Handler) RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1")
+// jwtMiddleware: JWT 认证中间件（nil 表示不启用）
+func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
+	// 公开接口组
+	public := r.Group("/api/v1")
 	{
+		public.POST("/auth/login", h.Login)
+		public.POST("/agent/auth", h.AgentAuth)
+		public.GET("/agent/envs/:envKey/configs", h.AgentGetConfigs)
+		public.POST("/agent/envs/:envKey/deploy-report", h.AgentReportDeploy)
+	}
+
+	// 受保护的 API 组
+	api := r.Group("/api/v1")
+	if jwtMiddleware != nil {
+		api.Use(jwtMiddleware)
+	}
+	{
+		// 用户管理
+		api.GET("/users", h.ListUsers)
+		api.POST("/users", h.CreateUser)
+		api.PUT("/users/:id", h.UpdateUser)
+		api.DELETE("/users/:id", h.DeleteUser)
+
+		// 仪表盘统计
+		api.GET("/dashboard/stats", h.GetDashboardStats)
+
 		// 客户管理
 		api.GET("/customers", h.ListCustomers)
 		api.POST("/customers", h.CreateCustomer)
@@ -88,10 +122,56 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		// 配置克隆
 		api.POST("/envs/:envId/configs/clone", h.CloneConfigs)
 
-		// Agent 接口
-		api.POST("/agent/auth", h.AgentAuth)
-		api.GET("/agent/envs/:envKey/configs", h.AgentGetConfigs)
+		// 环境完整克隆
+		api.POST("/envs/:envId/clone-env", h.CloneEnv)
+
+		// 制品版本管理
+		api.GET("/envs/:envId/artifacts", h.ListArtifacts)
+		api.POST("/envs/:envId/artifacts", h.CreateArtifact)
+		api.PUT("/envs/:envId/artifacts/:id", h.UpdateArtifact)
+		api.DELETE("/envs/:envId/artifacts/:id", h.DeleteArtifact)
+
+		// 通知配置
+		api.GET("/notify-configs", h.ListNotifyConfigs)
+		api.POST("/notify-configs", h.CreateNotifyConfig)
+		api.PUT("/notify-configs/:id", h.UpdateNotifyConfig)
+		api.DELETE("/notify-configs/:id", h.DeleteNotifyConfig)
+		api.POST("/notify-configs/:id/test", h.TestNotifyConfig)
 	}
+}
+
+// ==================== 仪表盘 Handler ====================
+
+func (h *Handler) GetDashboardStats(c *gin.Context) {
+	customers, _ := h.customerSvc.List()
+	components, _ := h.componentSvc.List()
+	deployRecords, _ := h.deployRecordSvc.ListAll()
+
+	todayCount := 0
+	today := time.Now().Format("2006-01-02")
+	successCount := 0
+	for _, r := range deployRecords {
+		if r.DeployedAt.Format("2006-01-02") == today {
+			todayCount++
+		}
+		if r.Status == "success" {
+			successCount++
+		}
+	}
+	successRate := 100
+	if len(deployRecords) > 0 {
+		successRate = successCount * 100 / len(deployRecords)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"customers":     len(customers),
+			"components":    len(components),
+			"todayDeploys":  todayCount,
+			"totalDeploys":  len(deployRecords),
+			"successRate":   successRate,
+		},
+	})
 }
 
 // ==================== 客户 Handler ====================
@@ -282,8 +362,8 @@ func (h *Handler) PreviewConfigs(c *gin.Context) {
 		return
 	}
 
-	// 获取配置值
-	configs, err := h.configSvc.GetByEnv(envID)
+	// 获取配置值（预览使用解密版本）
+	configs, err := h.configSvc.GetByEnvDecrypted(envID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -515,6 +595,118 @@ func (h *Handler) CloneConfigs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "配置克隆成功"})
 }
 
+// ==================== 环境完整克隆 Handler ====================
+
+type CloneEnvRequest struct {
+	FromEnvID string `json:"from_env_id" binding:"required"`
+	Operator  string `json:"operator"`
+}
+
+func (h *Handler) CloneEnv(c *gin.Context) {
+	toEnvID := c.Param("envId")
+	var req CloneEnvRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Operator == "" {
+		req.Operator = "system"
+	}
+
+	// 完整克隆（配置 + 制品版本）
+	if err := service.CloneEnv(h.configSvc, h.artifactVersionSvc, req.FromEnvID, toEnvID, req.Operator); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("环境克隆失败: %v", err)})
+		return
+	}
+
+	// 自动保存快照
+	_, _ = h.versionSvc.SaveSnapshot(toEnvID, req.Operator, fmt.Sprintf("从环境完整克隆 (来源: %s)", req.FromEnvID))
+
+	c.JSON(http.StatusOK, gin.H{"message": "环境克隆成功，配置和制品版本已同步"})
+}
+
+// ==================== 制品版本管理 Handler ====================
+
+func (h *Handler) ListArtifacts(c *gin.Context) {
+	envID := c.Param("envId")
+	artifacts, err := h.artifactVersionSvc.ListByEnv(envID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": artifacts})
+}
+
+type CreateArtifactRequest struct {
+	ComponentID     string `json:"component_id" binding:"required"`
+	ArtifactType    string `json:"artifact_type" binding:"required"`
+	ArtifactName    string `json:"artifact_name" binding:"required"`
+	ArtifactVersion string `json:"artifact_version" binding:"required"`
+	RegistryURL     string `json:"registry_url"`
+}
+
+func (h *Handler) CreateArtifact(c *gin.Context) {
+	envID := c.Param("envId")
+	var req CreateArtifactRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	artifact := &model.ComponentArtifactVersion{
+		CustomerEnvID:   uuid.MustParse(envID),
+		ComponentID:     uuid.MustParse(req.ComponentID),
+		ArtifactType:    req.ArtifactType,
+		ArtifactName:    req.ArtifactName,
+		ArtifactVersion: req.ArtifactVersion,
+		RegistryURL:     req.RegistryURL,
+	}
+
+	if err := h.artifactVersionSvc.Create(artifact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"data": artifact})
+}
+
+func (h *Handler) UpdateArtifact(c *gin.Context) {
+	envID := c.Param("envId")
+	artifactID := c.Param("id")
+
+	var req CreateArtifactRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	artifact := &model.ComponentArtifactVersion{
+		BaseModel:       model.BaseModel{ID: uuid.MustParse(artifactID)},
+		CustomerEnvID:   uuid.MustParse(envID),
+		ComponentID:     uuid.MustParse(req.ComponentID),
+		ArtifactType:    req.ArtifactType,
+		ArtifactName:    req.ArtifactName,
+		ArtifactVersion: req.ArtifactVersion,
+		RegistryURL:     req.RegistryURL,
+	}
+
+	if err := h.artifactVersionSvc.Update(artifact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": artifact})
+}
+
+func (h *Handler) DeleteArtifact(c *gin.Context) {
+	artifactID := c.Param("id")
+	if err := h.artifactVersionSvc.Delete(artifactID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
 func (h *Handler) AgentGetConfigs(c *gin.Context) {
 	envKey := c.Param("envKey")
 	env, err := h.envSvc.GetByKey(envKey)
@@ -523,8 +715,8 @@ func (h *Handler) AgentGetConfigs(c *gin.Context) {
 		return
 	}
 
-	// 获取配置值
-	configs, err := h.configSvc.GetByEnv(env.ID.String())
+	// 获取配置值（Agent 使用解密版本）
+	configs, err := h.configSvc.GetByEnvDecrypted(env.ID.String())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -581,4 +773,271 @@ func (h *Handler) AgentGetConfigs(c *gin.Context) {
 			"configs":    allConfigs,
 		},
 	})
+}
+
+type AgentDeployReportRequest struct {
+	VersionTag string `json:"version_tag" binding:"required"`
+	Status     string `json:"status"`
+	Notes      string `json:"notes"`
+	DeployedBy string `json:"deployed_by"`
+}
+
+func (h *Handler) AgentReportDeploy(c *gin.Context) {
+	envKey := c.Param("envKey")
+	env, err := h.envSvc.GetByKey(envKey)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的环境密钥"})
+		return
+	}
+
+	var req AgentDeployReportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Status == "" {
+		req.Status = "success"
+	}
+	if req.DeployedBy == "" {
+		req.DeployedBy = "agent"
+	}
+
+	record := &model.DeployRecord{
+		CustomerEnvID: env.ID,
+		VersionTag:    req.VersionTag,
+		DeployedBy:    req.DeployedBy,
+		Status:        req.Status,
+		Notes:         req.Notes,
+		DeployedAt:    time.Now(),
+	}
+
+	if err := h.deployRecordSvc.Create(record); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 发送通知
+	go func() {
+		if record.Status == "success" {
+			h.notifySvc.SendDeploySuccess("", env.EnvName, record.VersionTag, record.DeployedBy)
+		} else {
+			h.notifySvc.SendDeployFailed("", env.EnvName, record.VersionTag, record.DeployedBy, record.Notes)
+		}
+	}()
+
+	c.JSON(http.StatusCreated, gin.H{"data": record, "message": "部署状态已记录"})
+}
+
+// ==================== 认证 Handler ====================
+
+type LoginRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+func (h *Handler) Login(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	token, user, err := h.authSvc.Login(req.Username, req.Password)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"token":    token,
+			"user_id":  user.ID,
+			"username": user.Username,
+			"nickname": user.Nickname,
+			"role":     user.Role,
+		},
+	})
+}
+
+// ==================== 用户管理 Handler ====================
+
+func (h *Handler) ListUsers(c *gin.Context) {
+	users, err := h.authSvc.List()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": users})
+}
+
+type CreateUserRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Nickname string `json:"nickname"`
+	Role     string `json:"role"`
+}
+
+func (h *Handler) CreateUser(c *gin.Context) {
+	var req CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Role == "" {
+		req.Role = "user"
+	}
+
+	user := &model.User{
+		Username: req.Username,
+		Password: req.Password,
+		Nickname: req.Nickname,
+		Role:     req.Role,
+		Status:   "active",
+	}
+
+	if err := h.authSvc.Create(user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"data": user})
+}
+
+func (h *Handler) UpdateUser(c *gin.Context) {
+	id := c.Param("id")
+	var req CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	user := &model.User{
+		Username: req.Username,
+		Password: req.Password,
+		Nickname: req.Nickname,
+		Role:     req.Role,
+	}
+	// 确保 ID 可解析
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户 ID"})
+		return
+	}
+	user.BaseModel.ID = uid
+
+	if err := h.authSvc.Update(user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": user})
+}
+
+func (h *Handler) DeleteUser(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.authSvc.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+// ==================== 通知配置 Handler ====================
+
+func (h *Handler) ListNotifyConfigs(c *gin.Context) {
+	configs, err := h.notifySvc.List()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": configs})
+}
+
+type NotifyConfigRequest struct {
+	Name       string `json:"name" binding:"required"`
+	Type       string `json:"type" binding:"required"`
+	WebhookURL string `json:"webhook_url" binding:"required"`
+	Secret     string `json:"secret"`
+	Events     string `json:"events"`
+	IsActive   *bool  `json:"is_active"`
+}
+
+func (h *Handler) CreateNotifyConfig(c *gin.Context) {
+	var req NotifyConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Events == "" {
+		req.Events = "deploy_success,deploy_failed"
+	}
+
+	cfg := &model.NotifyConfig{
+		Name:       req.Name,
+		Type:       req.Type,
+		WebhookURL: req.WebhookURL,
+		Secret:     req.Secret,
+		Events:     req.Events,
+		IsActive:   true,
+	}
+	if req.IsActive != nil {
+		cfg.IsActive = *req.IsActive
+	}
+
+	if err := h.notifySvc.Create(cfg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": cfg})
+}
+
+func (h *Handler) UpdateNotifyConfig(c *gin.Context) {
+	id := c.Param("id")
+	var req NotifyConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	cfg := &model.NotifyConfig{
+		Name:       req.Name,
+		Type:       req.Type,
+		WebhookURL: req.WebhookURL,
+		Secret:     req.Secret,
+		Events:     req.Events,
+		IsActive:   true,
+	}
+	if req.IsActive != nil {
+		cfg.IsActive = *req.IsActive
+	}
+
+	if err := h.notifySvc.Update(id, cfg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": cfg})
+}
+
+func (h *Handler) DeleteNotifyConfig(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.notifySvc.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+func (h *Handler) TestNotifyConfig(c *gin.Context) {
+	id := c.Param("id")
+	cfg, err := h.notifySvc.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "通知配置不存在"})
+		return
+	}
+
+	if err := h.notifySvc.SendTestMessage(cfg.WebhookURL, cfg.Type, cfg.Secret); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("测试发送失败: %v", err)})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "测试消息发送成功"})
 }

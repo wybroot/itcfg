@@ -38,7 +38,10 @@
               <el-icon><Edit /></el-icon> 配置管理
             </el-button>
             <el-button size="small" type="success" @click="exportPkg(row)">
-              <el-icon><Download /></el-icon> 导出部署包
+              <el-icon><Download /></el-icon> 导出
+            </el-button>
+            <el-button size="small" type="warning" @click="openCloneDialog(row)">
+              <el-icon><CopyDocument /></el-icon> 克隆
             </el-button>
             <el-popconfirm title="确认删除该环境?" @confirm="handleDelete(row.id)">
               <template #reference>
@@ -81,6 +84,37 @@
         <el-button type="primary" @click="handleSubmit" :loading="submitting">确认</el-button>
       </template>
     </el-dialog>
+
+    <!-- 克隆环境对话框 -->
+    <el-dialog
+      title="克隆环境"
+      v-model="showCloneDialog"
+      width="500px"
+    >
+      <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+        将源环境的配置和制品版本完整复制到目标环境
+      </el-alert>
+      <el-form label-width="100px">
+        <el-form-item label="目标环境">
+          <el-tag type="primary">{{ cloneTarget?.env_name }}</el-tag>
+        </el-form-item>
+        <el-form-item label="源环境" required>
+          <el-select v-model="cloneSource" placeholder="请选择要克隆的源环境" style="width: 100%">
+            <el-option
+              v-for="env in envs"
+              :key="env.id"
+              :label="`${env.env_name} (${env.env_key})`"
+              :value="env.id"
+              :disabled="env.id === cloneTarget?.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCloneDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleClone" :loading="cloneLoading">开始克隆</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -88,7 +122,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getEnvs, createEnv, deleteEnv } from '../api'
+import { getEnvs, createEnv, deleteEnv, cloneEnv, exportPackage } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -163,13 +197,59 @@ const viewConfigs = (env: any) => {
   router.push(`/envs/${env.id}/configs`)
 }
 
-const exportPkg = (env: any) => {
-  ElMessage.info('部署包导出功能将在后续版本实现')
-}
-
 const copyEnvKey = (key: string) => {
   navigator.clipboard.writeText(key)
   ElMessage.success('已复制环境密钥')
+}
+
+const showCloneDialog = ref(false)
+const cloneTarget = ref<any>(null)
+const cloneSource = ref('')
+const cloneLoading = ref(false)
+
+const openCloneDialog = (env: any) => {
+  cloneTarget.value = env
+  cloneSource.value = ''
+  showCloneDialog.value = true
+}
+
+const handleClone = async () => {
+  if (!cloneSource.value) {
+    ElMessage.warning('请选择源环境')
+    return
+  }
+  cloneLoading.value = true
+  try {
+    await cloneEnv(cloneTarget.value.id, {
+      from_env_id: cloneSource.value,
+      operator: 'admin',
+    })
+    ElMessage.success('环境克隆成功')
+    showCloneDialog.value = false
+  } catch {
+    ElMessage.error('克隆失败')
+  } finally {
+    cloneLoading.value = false
+  }
+}
+
+const exportPkg = async (env: any) => {
+  ElMessage.info('正在打包部署包，请稍候...')
+  try {
+    const res: any = await exportPackage(env.id)
+    const blob = res.data || res
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${env.env_key}-deploy.tar.gz`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  }
 }
 
 const resetForm = () => {

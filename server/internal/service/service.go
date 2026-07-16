@@ -3,9 +3,12 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"itcfg/server/internal/crypto"
 	"itcfg/server/internal/model"
 	"itcfg/server/internal/repository"
+	"itcfg/server/internal/validate"
 
 	"github.com/google/uuid"
 )
@@ -87,23 +90,105 @@ func (s *ComponentService) Create(component *model.Component) error {
 
 // ConfigService 配置服务
 type ConfigService struct {
-	repo *repository.ConfigValueRepo
+	repo      *repository.ConfigValueRepo
+	compRepo  *repository.ComponentRepo
+	crypto    *crypto.AESGCM
+	validator *validate.ConfigValidator
 }
 
-func NewConfigService(repo *repository.ConfigValueRepo) *ConfigService {
-	return &ConfigService{repo: repo}
+func NewConfigService(repo *repository.ConfigValueRepo, compRepo *repository.ComponentRepo, encryptionKey string) *ConfigService {
+	svc := &ConfigService{
+		repo:      repo,
+		compRepo:  compRepo,
+		validator: validate.NewConfigValidator(),
+	}
+	if encryptionKey != "" {
+		svc.crypto = crypto.NewAESGCM(encryptionKey)
+	}
+	return svc
 }
 
+// maskedPassword 密码掩码标记
+const maskedPassword = "***ENCRYPTED***"
+
+// GetByEnv 获取环境配置值（Web UI 用，密码字段脱敏）
 func (s *ConfigService) GetByEnv(envID string) ([]model.CustomerConfigValue, error) {
-	return s.repo.GetByEnv(envID)
+	configs, err := s.repo.GetByEnv(envID)
+	if err != nil {
+		return nil, err
+	}
+	// Web UI：密码字段返回掩码
+	if s.crypto != nil {
+		varMap, _ := s.compRepo.GetAllVariables()
+		for i := range configs {
+			if v, ok := varMap[configs[i].VariableID.String()]; ok && v.VarType == "password" {
+				configs[i].VarValue = maskedPassword
+			}
+		}
+	}
+	return configs, nil
+}
+
+// GetByEnvDecrypted 获取环境配置值（Agent/导出用，解密密码字段）
+func (s *ConfigService) GetByEnvDecrypted(envID string) ([]model.CustomerConfigValue, error) {
+	configs, err := s.repo.GetByEnv(envID)
+	if err != nil {
+		return nil, err
+	}
+	if s.crypto != nil {
+		varMap, _ := s.compRepo.GetAllVariables()
+		for i := range configs {
+			if v, ok := varMap[configs[i].VariableID.String()]; ok && v.VarType == "password" {
+				if configs[i].VarValue != "" && configs[i].VarValue != maskedPassword {
+					decrypted, decErr := s.crypto.Decrypt(configs[i].VarValue)
+					if decErr == nil {
+						configs[i].VarValue = decrypted
+					}
+				}
+			}
+		}
+	}
+	return configs, nil
 }
 
 func (s *ConfigService) Upsert(envID, variableID, value, updatedBy string) error {
-	return s.repo.Upsert(envID, variableID, value, updatedBy)
+	return s.BatchUpsert(envID, map[string]string{variableID: value}, updatedBy)
 }
 
 func (s *ConfigService) BatchUpsert(envID string, values map[string]string, updatedBy string) error {
-	return s.repo.BatchUpsert(envID, values, updatedBy)
+	// 获取变量定义
+	varMap, _ := s.compRepo.GetAllVariables()
+
+	// 校验 + 加密处理
+	processedValues := make(map[string]string, len(values))
+	for varID, val := range values {
+		// 跳过掩码值（用户未修改密码字段）
+		if val == maskedPassword {
+			continue
+		}
+
+		varDef := varMap[varID]
+
+		// 校验值
+		if varDef != nil {
+			if err := s.validator.Validate(varDef.VarType, val, varDef.ValidationRule); err != nil {
+				return fmt.Errorf("变量 %s(%s) 校验失败: %w", varDef.VarLabel, varDef.VarName, err)
+			}
+		}
+
+		// 加密密码类型
+		if varDef != nil && varDef.VarType == "password" && s.crypto != nil && strings.TrimSpace(val) != "" {
+			encrypted, err := s.crypto.Encrypt(val)
+			if err != nil {
+				return fmt.Errorf("加密失败: %w", err)
+			}
+			val = encrypted
+		}
+
+		processedValues[varID] = val
+	}
+
+	return s.repo.BatchUpsert(envID, processedValues, updatedBy)
 }
 
 func (s *ConfigService) CloneConfigs(fromEnvID, toEnvID, updatedBy string) error {
@@ -125,6 +210,10 @@ func (s *DeployRecordService) ListByEnv(envID string) ([]model.DeployRecord, err
 
 func (s *DeployRecordService) Create(record *model.DeployRecord) error {
 	return s.repo.Create(record)
+}
+
+func (s *DeployRecordService) ListAll() ([]model.DeployRecord, error) {
+	return s.repo.ListAll()
 }
 
 // ConfigVersionService 配置版本服务
@@ -245,4 +334,52 @@ func (s *ConfigVersionService) Diff(envID string, fromVersion, toVersion int) (m
 type DiffEntry struct {
 	OldValue string `json:"old_value"`
 	NewValue string `json:"new_value"`
+}
+
+// ArtifactVersionService 制品版本服务
+type ArtifactVersionService struct {
+	repo *repository.ArtifactVersionRepo
+}
+
+func NewArtifactVersionService(repo *repository.ArtifactVersionRepo) *ArtifactVersionService {
+	return &ArtifactVersionService{repo: repo}
+}
+
+func (s *ArtifactVersionService) ListByEnv(envID string) ([]model.ComponentArtifactVersion, error) {
+	return s.repo.ListByEnv(envID)
+}
+
+func (s *ArtifactVersionService) Create(artifact *model.ComponentArtifactVersion) error {
+	return s.repo.Create(artifact)
+}
+
+func (s *ArtifactVersionService) Update(artifact *model.ComponentArtifactVersion) error {
+	return s.repo.Update(artifact)
+}
+
+func (s *ArtifactVersionService) Delete(id string) error {
+	return s.repo.Delete(id)
+}
+
+func (s *ArtifactVersionService) CloneArtifacts(fromEnvID, toEnvID string) error {
+	return s.repo.CloneArtifacts(fromEnvID, toEnvID)
+}
+
+// CloneEnv 环境完整克隆（配置+制品版本）
+func CloneEnv(
+	configSvc *ConfigService,
+	artifactSvc *ArtifactVersionService,
+	fromEnvID, toEnvID, operator string,
+) error {
+	// 1. 克隆配置
+	if err := configSvc.CloneConfigs(fromEnvID, toEnvID, operator); err != nil {
+		return fmt.Errorf("克隆配置失败: %w", err)
+	}
+
+	// 2. 克隆制品版本
+	if err := artifactSvc.CloneArtifacts(fromEnvID, toEnvID); err != nil {
+		return fmt.Errorf("克隆制品版本失败: %w", err)
+	}
+
+	return nil
 }

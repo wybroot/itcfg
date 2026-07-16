@@ -9,14 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-)
 
-// AgentConfig Agent 配置
-type AgentConfig struct {
-	ServerURL string `json:"server_url"`
-	EnvKey    string `json:"env_key"`
-	ConfigDir string `json:"config_dir"`
-}
+	"itcfg/agent/internal/config"
+)
 
 // AuthResult 认证结果
 type AuthResult struct {
@@ -119,37 +114,45 @@ func (c *OnlineClient) PullConfigs() (map[string]map[string]string, error) {
 	return result.Data.Configs, nil
 }
 
-// SaveConfig 保存 Agent 配置
-func SaveConfig(cfg *AgentConfig) error {
-	homeDir, _ := os.UserHomeDir()
-	configPath := filepath.Join(homeDir, ".itcfg", "agent.json")
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(configPath, data, 0600)
+// SaveConfig 保存 Agent 配置（兼容旧调用）
+func SaveConfig(cfg *config.AgentConfig) error {
+	return config.Save(cfg)
 }
 
-// LoadConfig 加载 Agent 配置
-func LoadConfig() (*AgentConfig, error) {
-	homeDir, _ := os.UserHomeDir()
-	configPath := filepath.Join(homeDir, ".itcfg", "agent.json")
+// LoadConfig 加载 Agent 配置（兼容旧调用）
+func LoadConfig() (*config.AgentConfig, error) {
+	return config.Load()
+}
 
-	data, err := os.ReadFile(configPath)
+// ReportDeploy 上报部署状态到配置中台
+func (c *OnlineClient) ReportDeploy(versionTag, status, notes string) error {
+	url := fmt.Sprintf("%s/api/v1/agent/envs/%s/deploy-report", c.serverURL, c.envKey)
+
+	body := fmt.Sprintf(`{"version_tag":"%s","status":"%s","notes":"%s","deployed_by":"agent"}`,
+		versionTag, status, notes)
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {
-		return nil, err
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Env-Key", c.envKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("上报部署状态失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("上报失败 (%d): %s", resp.StatusCode, string(respBody))
 	}
 
-	var cfg AgentConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+	if c.verbose {
+		fmt.Println("  部署状态已上报至配置中台")
 	}
-	return &cfg, nil
+	return nil
 }
 
 // WriteConfigs 写入配置文件

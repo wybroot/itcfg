@@ -114,3 +114,24 @@ type ConfigVersion struct {
 	CreatedBy       string    `gorm:"type:varchar(64)" json:"created_by"`
 	ChangeSummary   string    `gorm:"type:text" json:"change_summary"`
 }
+
+// User 系统用户
+type User struct {
+	BaseModel
+	Username string `gorm:"type:varchar(64);uniqueIndex;not null" json:"username"`
+	Password string `gorm:"type:varchar(256);not null" json:"-"`
+	Nickname string `gorm:"type:varchar(64)" json:"nickname"`
+	Role     string `gorm:"type:varchar(16);default:user" json:"role"`
+	Status   string `gorm:"type:varchar(16);default:active" json:"status"`
+}
+
+// NotifyConfig 通知配置
+type NotifyConfig struct {
+	BaseModel
+	Name       string `gorm:"type:varchar(64);not null" json:"name"`
+	Type       string `gorm:"type:varchar(16);not null" json:"type"` // dingtalk / wecom / webhook
+	WebhookURL string `gorm:"type:varchar(512);not null" json:"webhook_url"`
+	Secret     string `gorm:"type:varchar(128)" json:"-"`
+	Events     string `gorm:"type:varchar(256);default:deploy_success,deploy_failed" json:"events"`
+	IsActive   bool   `gorm:"default:true" json:"is_active"`
+}

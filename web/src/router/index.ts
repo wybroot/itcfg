@@ -1,12 +1,29 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isLoggedIn } from '../api'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/login',
+      name: 'Login',
+      component: () => import('../views/Login.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/',
       name: 'Home',
       component: () => import('../views/Home.vue'),
+    },
+    {
+      path: '/users',
+      name: 'Users',
+      component: () => import('../views/Users.vue'),
+    },
+    {
+      path: '/notify-configs',
+      name: 'NotifyConfigs',
+      component: () => import('../views/NotifyConfigs.vue'),
     },
     {
       path: '/customers',
@@ -34,8 +51,8 @@ const router = createRouter({
       component: () => import('../views/Templates.vue'),
     },
     {
-      path: '/deploy-records',
-      name: 'DeployRecords',
+      path: '/envs/:envId/deploy-records',
+      name: 'EnvDeployRecords',
       component: () => import('../views/DeployRecords.vue'),
     },
     {
@@ -43,7 +60,21 @@ const router = createRouter({
       name: 'VersionHistory',
       component: () => import('../views/VersionHistory.vue'),
     },
+    {
+      path: '/envs/:envId/artifacts',
+      name: 'ArtifactVersion',
+      component: () => import('../views/ArtifactVersion.vue'),
+    },
   ],
+})
+
+// 路由守卫：未登录重定向到登录页
+router.beforeEach((to, _from, next) => {
+  if (to.meta.public || isLoggedIn()) {
+    next()
+  } else {
+    next('/login')
+  }
 })
 
 export default router

@@ -14,6 +14,12 @@
             <el-button type="info" @click="$router.push(`/envs/${envId}/versions`)">
               <el-icon><Clock /></el-icon> 版本历史
             </el-button>
+            <el-button type="warning" @click="$router.push(`/envs/${envId}/artifacts`)">
+              <el-icon><Box /></el-icon> 制品版本
+            </el-button>
+            <el-button type="danger" plain @click="$router.push(`/envs/${envId}/deploy-records`)">
+              <el-icon><Clock /></el-icon> 部署记录
+            </el-button>
             <el-button type="primary" @click="previewConfig">
               <el-icon><View /></el-icon> 预览配置
             </el-button>
@@ -54,13 +60,21 @@
                     :placeholder="`请输入${v.var_label}`"
                   />
                   <!-- 密码输入 -->
-                  <el-input
-                    v-else-if="v.var_type === 'password'"
-                    v-model="configValues[v.id]"
-                    type="password"
-                    show-password
-                    :placeholder="`请输入${v.var_label}`"
-                  />
+                  <template v-else-if="v.var_type === 'password'">
+                    <div v-if="configValues[v.id] === '***ENCRYPTED***'" style="display: flex; align-items: center; gap: 8px">
+                      <el-tag type="warning" size="small">已加密存储</el-tag>
+                      <el-button size="small" text type="primary" @click="configValues[v.id] = ''">
+                        设置新密码
+                      </el-button>
+                    </div>
+                    <el-input
+                      v-else
+                      v-model="configValues[v.id]"
+                      type="password"
+                      show-password
+                      :placeholder="`请输入${v.var_label}`"
+                    />
+                  </template>
                   <!-- 数字输入 -->
                   <el-input-number
                     v-else-if="v.var_type === 'number'"
@@ -230,9 +244,16 @@ const onComponentChange = () => {
 }
 
 const saveConfigs = async () => {
+  // 过滤掩码值（用户未修改的加密密码）
+  const cleanValues: Record<string, string> = {}
+  for (const [key, val] of Object.entries(configValues.value)) {
+    if (val !== '***ENCRYPTED***') {
+      cleanValues[key] = val as string
+    }
+  }
   try {
     await updateEnvConfigs(envId, {
-      values: configValues.value,
+      values: cleanValues,
       updated_by: 'admin',
     })
     ElMessage.success('配置保存成功')

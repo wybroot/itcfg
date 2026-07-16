@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"itcfg/server/internal/model"
 
 	"github.com/google/uuid"
@@ -36,6 +38,8 @@ func (d *Database) AutoMigrate() error {
 		&model.ComponentArtifactVersion{},
 		&model.DeployRecord{},
 		&model.ConfigVersion{},
+		&model.User{},
+		&model.NotifyConfig{},
 	)
 }
 
@@ -147,6 +151,19 @@ func (r *ComponentRepo) Create(component *model.Component) error {
 	return r.db.Create(component).Error
 }
 
+// GetAllVariables 获取所有组件的变量定义（返回 map[variableID]*ComponentVariable）
+func (r *ComponentRepo) GetAllVariables() (map[string]*model.ComponentVariable, error) {
+	var variables []model.ComponentVariable
+	if err := r.db.Find(&variables).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]*model.ComponentVariable, len(variables))
+	for i := range variables {
+		result[variables[i].ID.String()] = &variables[i]
+	}
+	return result, nil
+}
+
 // ==================== 配置值 Repository ====================
 
 type ConfigValueRepo struct {
@@ -230,6 +247,12 @@ func (r *DeployRecordRepo) Create(record *model.DeployRecord) error {
 	return r.db.Create(record).Error
 }
 
+func (r *DeployRecordRepo) ListAll() ([]model.DeployRecord, error) {
+	var records []model.DeployRecord
+	err := r.db.Order("deployed_at DESC").Find(&records).Error
+	return records, err
+}
+
 // ==================== 配置版本 Repository ====================
 
 type ConfigVersionRepo struct {
@@ -288,4 +311,150 @@ func (r *ConfigValueRepo) CloneConfigs(fromEnvID, toEnvID string, updatedBy stri
 	}
 
 	return r.BatchUpsert(toEnvID, values, updatedBy)
+}
+
+// ==================== 制品版本 Repository ====================
+
+type ArtifactVersionRepo struct {
+	db *gorm.DB
+}
+
+func NewArtifactVersionRepo(db *gorm.DB) *ArtifactVersionRepo {
+	return &ArtifactVersionRepo{db: db}
+}
+
+func (r *ArtifactVersionRepo) ListByEnv(envID string) ([]model.ComponentArtifactVersion, error) {
+	var artifacts []model.ComponentArtifactVersion
+	err := r.db.Where("customer_env_id = ?", envID).
+		Order("created_at DESC").Find(&artifacts).Error
+	return artifacts, err
+}
+
+func (r *ArtifactVersionRepo) GetByID(id string) (*model.ComponentArtifactVersion, error) {
+	var artifact model.ComponentArtifactVersion
+	err := r.db.First(&artifact, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func (r *ArtifactVersionRepo) Create(artifact *model.ComponentArtifactVersion) error {
+	return r.db.Create(artifact).Error
+}
+
+func (r *ArtifactVersionRepo) Update(artifact *model.ComponentArtifactVersion) error {
+	return r.db.Save(artifact).Error
+}
+
+func (r *ArtifactVersionRepo) Delete(id string) error {
+	return r.db.Delete(&model.ComponentArtifactVersion{}, "id = ?", id).Error
+}
+
+// CloneArtifacts 克隆制品版本关联
+func (r *ArtifactVersionRepo) CloneArtifacts(fromEnvID, toEnvID string) error {
+	var sourceArtifacts []model.ComponentArtifactVersion
+	if err := r.db.Where("customer_env_id = ?", fromEnvID).Find(&sourceArtifacts).Error; err != nil {
+		return err
+	}
+
+	for _, artifact := range sourceArtifacts {
+		artifact.ID = uuid.Nil // 让数据库生成新 ID
+		artifact.CustomerEnvID = uuid.MustParse(toEnvID)
+		artifact.CreatedAt = time.Now()
+		artifact.UpdatedAt = time.Now()
+		if err := r.db.Create(&artifact).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ==================== 用户 Repository ====================
+
+type UserRepo struct {
+	db *gorm.DB
+}
+
+func NewUserRepo(db *gorm.DB) *UserRepo {
+	return &UserRepo{db: db}
+}
+
+func (r *UserRepo) List() ([]model.User, error) {
+	var users []model.User
+	err := r.db.Order("created_at DESC").Find(&users).Error
+	return users, err
+}
+
+func (r *UserRepo) GetByID(id string) (*model.User, error) {
+	var user model.User
+	err := r.db.First(&user, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepo) GetByUsername(username string) (*model.User, error) {
+	var user model.User
+	err := r.db.First(&user, "username = ?", username).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepo) Create(user *model.User) error {
+	return r.db.Create(user).Error
+}
+
+func (r *UserRepo) Update(user *model.User) error {
+	return r.db.Save(user).Error
+}
+
+func (r *UserRepo) Delete(id string) error {
+	return r.db.Delete(&model.User{}, "id = ?", id).Error
+}
+
+// ==================== 通知配置 Repository ====================
+
+type NotifyConfigRepo struct {
+	db *gorm.DB
+}
+
+func NewNotifyConfigRepo(db *gorm.DB) *NotifyConfigRepo {
+	return &NotifyConfigRepo{db: db}
+}
+
+func (r *NotifyConfigRepo) List() ([]model.NotifyConfig, error) {
+	var configs []model.NotifyConfig
+	err := r.db.Order("created_at DESC").Find(&configs).Error
+	return configs, err
+}
+
+func (r *NotifyConfigRepo) ListActive() ([]model.NotifyConfig, error) {
+	var configs []model.NotifyConfig
+	err := r.db.Where("is_active = ?", true).Find(&configs).Error
+	return configs, err
+}
+
+func (r *NotifyConfigRepo) GetByID(id string) (*model.NotifyConfig, error) {
+	var cfg model.NotifyConfig
+	err := r.db.First(&cfg, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func (r *NotifyConfigRepo) Create(cfg *model.NotifyConfig) error {
+	return r.db.Create(cfg).Error
+}
+
+func (r *NotifyConfigRepo) Update(cfg *model.NotifyConfig) error {
+	return r.db.Save(cfg).Error
+}
+
+func (r *NotifyConfigRepo) Delete(id string) error {
+	return r.db.Delete(&model.NotifyConfig{}, "id = ?", id).Error
 }

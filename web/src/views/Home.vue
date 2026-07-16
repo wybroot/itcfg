@@ -66,6 +66,53 @@
 
     <el-card style="margin-top: 20px">
       <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span>系统健康状态</span>
+          <el-button size="small" @click="fetchHealth" :loading="healthLoading">刷新</el-button>
+        </div>
+      </template>
+      <el-row :gutter="16">
+        <el-col :span="8">
+          <div style="text-align: center; padding: 12px">
+            <div style="font-size: 24px; margin-bottom: 8px">
+              <el-icon :size="24" :color="health.service === 'ok' ? '#67C23A' : '#F56C6C'">
+                <CircleCheck v-if="health.service === 'ok'" />
+                <CircleClose v-else />
+              </el-icon>
+            </div>
+            <div style="font-size: 14px; color: #606266">服务状态</div>
+            <el-tag :type="health.service === 'ok' ? 'success' : 'danger'" size="small">{{ health.service || '检测中...' }}</el-tag>
+          </div>
+        </el-col>
+        <el-col :span="8">
+          <div style="text-align: center; padding: 12px">
+            <div style="font-size: 24px; margin-bottom: 8px">
+              <el-icon :size="24" :color="health.database === 'ok' ? '#67C23A' : '#F56C6C'">
+                <CircleCheck v-if="health.database === 'ok'" />
+                <CircleClose v-else />
+              </el-icon>
+            </div>
+            <div style="font-size: 14px; color: #606266">数据库</div>
+            <el-tag :type="health.database === 'ok' ? 'success' : 'danger'" size="small">{{ health.database || '检测中...' }}</el-tag>
+          </div>
+        </el-col>
+        <el-col :span="8">
+          <div style="text-align: center; padding: 12px">
+            <div style="font-size: 24px; margin-bottom: 8px">
+              <el-icon :size="24" :color="health.templates === 'ok' ? '#67C23A' : '#F56C6C'">
+                <CircleCheck v-if="health.templates === 'ok'" />
+                <CircleClose v-else />
+              </el-icon>
+            </div>
+            <div style="font-size: 14px; color: #606266">模板引擎</div>
+            <el-tag :type="health.templates === 'ok' ? 'success' : 'danger'" size="small">{{ health.templates || '检测中...' }}</el-tag>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card style="margin-top: 20px">
+      <template #header>
         <span>使用流程</span>
       </template>
       <el-steps :active="0" align-center>
@@ -80,12 +127,56 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
+import axios from 'axios'
+import { getDashboardStats } from '../api'
 
 const stats = reactive({
   customers: 0,
-  components: 3,
+  components: 0,
   todayDeploys: 0,
   successRate: 100,
+})
+
+const fetchStats = async () => {
+  try {
+    const res: any = await getDashboardStats()
+    const data = res.data
+    stats.customers = data.customers || 0
+    stats.components = data.components || 0
+    stats.todayDeploys = data.todayDeploys || 0
+    stats.successRate = data.successRate || 100
+  } catch {
+    // 使用默认值
+  }
+}
+
+const health = reactive<Record<string, string>>({
+  service: '',
+  database: '',
+  templates: '',
+})
+const healthLoading = ref(false)
+
+const fetchHealth = async () => {
+  healthLoading.value = true
+  try {
+    const res = await axios.get('/health')
+    const data = res.data
+    health.service = data.status || 'unknown'
+    health.database = data.checks?.database || 'unknown'
+    health.templates = data.checks?.templates || 'unknown'
+  } catch {
+    health.service = 'error'
+    health.database = 'error'
+    health.templates = 'error'
+  } finally {
+    healthLoading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchStats()
+  fetchHealth()
 })
 </script>

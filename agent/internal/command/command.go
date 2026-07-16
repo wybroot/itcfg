@@ -3,7 +3,9 @@ package command
 import (
 	"fmt"
 	"os"
+	"time"
 
+	"itcfg/agent/internal/config"
 	"itcfg/agent/internal/deploy"
 	"itcfg/agent/internal/validate"
 
@@ -37,6 +39,7 @@ func NewRootCommand(version, buildTime, gitCommit string) *cobra.Command {
 	rootCmd.AddCommand(newPullCmd())
 	rootCmd.AddCommand(newImportCmd())
 	rootCmd.AddCommand(newDeployCmd())
+	rootCmd.AddCommand(newOnlineCmd())
 	rootCmd.AddCommand(newValidateCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newRollbackCmd())
@@ -266,12 +269,12 @@ func newLoginCmd() *cobra.Command {
 			fmt.Println()
 
 			// 保存配置
-			cfg := deploy.AgentConfig{
+			cfg := config.AgentConfig{
 				ServerURL: serverURL,
 				EnvKey:    envKey,
 				ConfigDir: configDir,
 			}
-			if err := deploy.SaveConfig(&cfg); err != nil {
+			if err := config.Save(&cfg); err != nil {
 				return fmt.Errorf("保存配置失败: %w", err)
 			}
 
@@ -295,8 +298,8 @@ func newPullCmd() *cobra.Command {
 		Long:  "从配置中台在线拉取并渲染所有组件配置",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 加载配置
-			cfg, err := deploy.LoadConfig()
-			if err != nil {
+			cfg, err := config.Load()
+			if err != nil || cfg.ServerURL == "" {
 				return fmt.Errorf("未登录，请先执行 'config-agent login'")
 			}
 
@@ -335,6 +338,104 @@ func newPullCmd() *cobra.Command {
 		},
 	}
 
+	return cmd
+}
+
+// newOnlineCmd 在线一键部署命令
+func newOnlineCmd() *cobra.Command {
+	var (
+		serverURL   string
+		envKey      string
+		versionTag  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "online",
+		Short: "在线一键部署",
+		Long:  "自动完成登录 → 拉取配置 → 部署 → 上报状态，一条命令完成在线部署",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if serverURL == "" {
+				return fmt.Errorf("请指定配置中台地址: --server")
+			}
+			if envKey == "" {
+				return fmt.Errorf("请指定环境密钥: --env-key")
+			}
+			if versionTag == "" {
+				versionTag = fmt.Sprintf("online-%s", time.Now().Format("20060102-150405"))
+			}
+
+			fmt.Println("==========================================")
+			fmt.Println("  ITCFG Config Agent - 在线一键部署")
+			fmt.Println("==========================================")
+			fmt.Printf("  服务器: %s\n", serverURL)
+
+			client := deploy.NewOnlineClient(serverURL, envKey, verbose)
+
+			// Step 1: 认证
+			fmt.Println("\n[1/4] 认证...")
+			authResult, err := client.Auth()
+			if err != nil {
+				return fmt.Errorf("认证失败: %w", err)
+			}
+			fmt.Printf("  ✓ 认证成功 (环境: %s)\n", authResult.EnvName)
+
+			// Step 2: 拉取配置
+			fmt.Println("\n[2/4] 拉取配置...")
+			configs, err := client.PullConfigs()
+			if err != nil {
+				return fmt.Errorf("拉取配置失败: %w", err)
+			}
+			fmt.Printf("  ✓ 已拉取 %d 个组件配置\n", len(configs))
+
+			// 写入配置
+			if !dryRun {
+				configsDir := configDir + "/configs"
+				if err := deploy.WriteConfigs(configsDir, configs); err != nil {
+					return fmt.Errorf("写入配置失败: %w", err)
+				}
+			} else {
+				fmt.Println("  [DRY-RUN] 跳过配置写入")
+			}
+
+			// Step 3: 部署
+			fmt.Println("\n[3/4] 执行部署...")
+			deployer := deploy.NewDeployer(configDir, dryRun, verbose)
+			if err := deployer.Deploy(); err != nil {
+				// 上报失败状态
+				client.ReportDeploy(versionTag, "failed", err.Error())
+				return fmt.Errorf("部署失败: %w", err)
+			}
+			fmt.Println("  ✓ 部署完成")
+
+			// Step 4: 上报状态
+			fmt.Println("\n[4/4] 上报部署状态...")
+			if err := client.ReportDeploy(versionTag, "success", "在线部署完成"); err != nil {
+				fmt.Printf("  ⚠ 上报状态失败: %v\n", err)
+			} else {
+				fmt.Println("  ✓ 状态已上报")
+			}
+
+			// 保存配置供后续使用
+			cfg := config.AgentConfig{
+				ServerURL: serverURL,
+				EnvKey:    envKey,
+				ConfigDir: configDir,
+			}
+			config.Save(&cfg)
+
+			fmt.Println()
+			fmt.Println("==========================================")
+			fmt.Println("  在线部署完成！")
+			fmt.Println("==========================================")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&serverURL, "server", "", "配置中台地址")
+	cmd.Flags().StringVar(&envKey, "env-key", "", "环境密钥")
+	cmd.Flags().StringVar(&versionTag, "version-tag", "", "部署版本标签 (默认自动生成)")
+	cmd.MarkFlagRequired("server")
+	cmd.MarkFlagRequired("env-key")
 	return cmd
 }
 

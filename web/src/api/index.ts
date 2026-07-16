@@ -1,8 +1,35 @@
 import axios from 'axios'
 
+const TOKEN_KEY = 'itcfg_token'
+
+// Token 管理
+export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY)
+export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token)
+export const removeToken = () => localStorage.removeItem(TOKEN_KEY)
+export const isLoggedIn = (): boolean => !!getToken()
+export const getUser = () => {
+  try {
+    const raw = localStorage.getItem('itcfg_user')
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+export const setUser = (user: any) => localStorage.setItem('itcfg_user', JSON.stringify(user))
+export const removeUser = () => localStorage.removeItem('itcfg_user')
+
 const api = axios.create({
   baseURL: '/api/v1',
   timeout: 30000,
+})
+
+// 请求拦截器 - 自动附加 token
+api.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
 })
 
 // 响应拦截器
@@ -11,9 +38,35 @@ api.interceptors.response.use(
   (error) => {
     const message = error.response?.data?.error || error.message || '请求失败'
     console.error('API Error:', message)
+    // 401 未认证时清除 token
+    if (error.response?.status === 401) {
+      removeToken()
+      removeUser()
+    }
     return Promise.reject(error)
   }
 )
+
+// ==================== 认证 API ====================
+
+export const login = (username: string, password: string) =>
+  api.post('/auth/login', { username, password })
+
+// ==================== 用户管理 API ====================
+
+export const getUsers = () => api.get('/users')
+
+export const createUser = (data: { username: string; password: string; nickname?: string; role?: string }) =>
+  api.post('/users', data)
+
+export const updateUser = (id: string, data: { username: string; password?: string; nickname?: string; role?: string }) =>
+  api.put(`/users/${id}`, data)
+
+export const deleteUser = (id: string) => api.delete(`/users/${id}`)
+
+// ==================== 仪表盘 API ====================
+
+export const getDashboardStats = () => api.get('/dashboard/stats')
 
 // ==================== 客户 API ====================
 
@@ -55,7 +108,7 @@ export const previewConfigs = (envId: string, componentName: string) =>
   api.post(`/envs/${envId}/configs/preview`, { component_name: componentName })
 
 export const exportPackage = (envId: string) =>
-  api.post(`/envs/${envId}/export`, {}, { responseType: 'blob' })
+  axios.post(`/api/v1/envs/${envId}/export`, {}, { responseType: 'blob' })
 
 // ==================== 部署记录 API ====================
 
@@ -85,3 +138,57 @@ export const rollbackVersion = (envId: string, data: { target_version: number; o
 
 export const cloneConfigs = (envId: string, data: { from_env_id: string; updated_by?: string }) =>
   api.post(`/envs/${envId}/configs/clone`, data)
+
+// ==================== 环境克隆 API ====================
+
+export const cloneEnv = (envId: string, data: { from_env_id: string; operator?: string }) =>
+  api.post(`/envs/${envId}/clone-env`, data)
+
+// ==================== 制品版本 API ====================
+
+export const getArtifacts = (envId: string) => api.get(`/envs/${envId}/artifacts`)
+
+export const createArtifact = (envId: string, data: {
+  component_id: string
+  artifact_type: string
+  artifact_name: string
+  artifact_version: string
+  registry_url?: string
+}) => api.post(`/envs/${envId}/artifacts`, data)
+
+export const updateArtifact = (envId: string, id: string, data: {
+  component_id: string
+  artifact_type: string
+  artifact_name: string
+  artifact_version: string
+  registry_url?: string
+}) => api.put(`/envs/${envId}/artifacts/${id}`, data)
+
+export const deleteArtifact = (envId: string, id: string) =>
+  api.delete(`/envs/${envId}/artifacts/${id}`)
+
+// ==================== 通知配置 API ====================
+
+export const getNotifyConfigs = () => api.get('/notify-configs')
+
+export const createNotifyConfig = (data: {
+  name: string
+  type: string
+  webhook_url: string
+  secret?: string
+  events?: string
+  is_active?: boolean
+}) => api.post('/notify-configs', data)
+
+export const updateNotifyConfig = (id: string, data: {
+  name: string
+  type: string
+  webhook_url: string
+  secret?: string
+  events?: string
+  is_active?: boolean
+}) => api.put(`/notify-configs/${id}`, data)
+
+export const deleteNotifyConfig = (id: string) => api.delete(`/notify-configs/${id}`)
+
+export const testNotifyConfig = (id: string) => api.post(`/notify-configs/${id}/test`)

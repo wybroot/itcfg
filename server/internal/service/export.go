@@ -9,10 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"itcfg/server/internal/model"
 	"itcfg/server/internal/template"
 
 	"github.com/google/uuid"
@@ -84,8 +82,8 @@ func (e *PackageExporter) Export(envID string, createdBy string) (string, *Packa
 		return "", nil, fmt.Errorf("获取组件列表失败: %w", err)
 	}
 
-	// 4. 获取所有配置值
-	configs, err := e.configSvc.GetByEnv(envID)
+	// 4. 获取所有配置值（导出使用解密版本）
+	configs, err := e.configSvc.GetByEnvDecrypted(envID)
 	if err != nil {
 		return "", nil, fmt.Errorf("获取配置值失败: %w", err)
 	}
@@ -383,7 +381,3 @@ docker-compose -f docker-compose.yml down -v
 echo "服务已卸载"
 `
 }
-
-// 确保导入 model 包
-var _ = model.Customer{}
-var _ = strings.TrimSpace

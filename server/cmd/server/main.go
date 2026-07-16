@@ -5,14 +5,31 @@ import (
 	"log"
 	"os"
 
+	"itcfg/server/internal/auth"
 	"itcfg/server/internal/handler"
 	"itcfg/server/internal/middleware"
+	"itcfg/server/internal/notify"
 	"itcfg/server/internal/repository"
 	"itcfg/server/internal/service"
 	"itcfg/server/internal/template"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	_ "itcfg/server/docs"
 )
+
+// @title           ITCFG 配置中台 API
+// @version         1.0
+// @description     配置管理与部署自动化系统 API 文档
+// @contact.name    ITCFG Team
+// @host            localhost:8080
+// @BasePath        /api/v1
+// @schemes         http https
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 
 func main() {
 	// 数据库配置
@@ -39,17 +56,31 @@ func main() {
 	componentRepo := repository.NewComponentRepo(db.DB)
 	configValueRepo := repository.NewConfigValueRepo(db.DB)
 	deployRecordRepo := repository.NewDeployRecordRepo(db.DB)
-
-	// 初始化 Repository
 	configVersionRepo := repository.NewConfigVersionRepo(db.DB)
+	artifactVersionRepo := repository.NewArtifactVersionRepo(db.DB)
+	userRepo := repository.NewUserRepo(db.DB)
+	notifyConfigRepo := repository.NewNotifyConfigRepo(db.DB)
+
+	// 初始化 JWT
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "itcfg-default-secret-change-in-production"
+	}
+	jwtManager := auth.NewJWTManager(jwtSecret, 24)
 
 	// 初始化 Service
+	authSvc := auth.NewUserService(userRepo, jwtManager)
+	notifySvc := notify.NewService(notifyConfigRepo)
 	customerSvc := service.NewCustomerService(customerRepo)
 	envSvc := service.NewEnvService(envRepo)
 	componentSvc := service.NewComponentService(componentRepo)
-	configSvc := service.NewConfigService(configValueRepo)
+	// 加密密钥（敏感配置加密存储）
+	encryptionKey := os.Getenv("ENCRYPTION_KEY")
+
+	configSvc := service.NewConfigService(configValueRepo, componentRepo, encryptionKey)
 	deployRecordSvc := service.NewDeployRecordService(deployRecordRepo)
 	versionSvc := service.NewConfigVersionService(configVersionRepo, configValueRepo)
+	artifactVersionSvc := service.NewArtifactVersionService(artifactVersionRepo)
 
 	// 初始化模板引擎
 	templateDir := os.Getenv("TEMPLATE_DIR")
@@ -70,8 +101,24 @@ func main() {
 
 	// 初始化 Handler
 	h := handler.NewHandler(
-		customerSvc, envSvc, componentSvc, configSvc, deployRecordSvc, templateEngine, packageExporter, versionSvc,
+		customerSvc, envSvc, componentSvc, configSvc, deployRecordSvc,
+		templateEngine, packageExporter, versionSvc, artifactVersionSvc, authSvc, notifySvc,
 	)
+
+	// 初始化管理员账户
+	adminUser := os.Getenv("ADMIN_USER")
+	if adminUser == "" {
+		adminUser = "admin"
+	}
+	adminPass := os.Getenv("ADMIN_PASS")
+	if adminPass == "" {
+		adminPass = "admin123"
+	}
+	if err := authSvc.InitAdmin(adminUser, adminPass); err != nil {
+		log.Printf("初始化管理员账户失败: %v", err)
+	} else {
+		log.Printf("管理员账户已就绪 (用户: %s)", adminUser)
+	}
 
 	// 初始化 Gin
 	r := gin.Default()
@@ -79,12 +126,40 @@ func main() {
 	r.Use(middleware.LoggerMiddleware())
 	r.Use(middleware.EnvAuthMiddleware())
 
-	// 注册路由
-	h.RegisterRoutes(r)
+	// 注册路由（传入 JWT 中间件保护业务接口）
+	jwtMiddleware := middleware.JWTAuthMiddleware(jwtManager)
+	h.RegisterRoutes(r, jwtMiddleware)
+
+	// Swagger 文档
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "service": "itcfg-server"})
+		status := "ok"
+		dbStatus := "ok"
+
+		// 检查数据库连接
+		sqlDB, err := db.DB.DB()
+		if err != nil || sqlDB.Ping() != nil {
+			dbStatus = "error"
+			status = "degraded"
+		}
+
+		// 检查模板目录
+		templateStatus := "ok"
+		if _, err := os.Stat(templateDir); os.IsNotExist(err) {
+			templateStatus = "error"
+			status = "degraded"
+		}
+
+		c.JSON(200, gin.H{
+			"status":   status,
+			"service":  "itcfg-server",
+			"checks": gin.H{
+				"database": dbStatus,
+				"templates": templateStatus,
+			},
+		})
 	})
 
 	// 启动服务
