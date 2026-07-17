@@ -50,6 +50,11 @@ func main() {
 	}
 	log.Println("数据库迁移完成")
 
+	// 插入种子数据
+	if err := repository.SeedComponents(db.DB); err != nil {
+		log.Printf("种子数据插入失败: %v", err)
+	}
+
 	// 初始化 Repository
 	customerRepo := repository.NewCustomerRepo(db.DB)
 	envRepo := repository.NewEnvRepo(db.DB)
