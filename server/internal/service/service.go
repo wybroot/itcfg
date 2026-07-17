@@ -75,6 +75,27 @@ func (s *EnvService) Delete(id string) error {
 	return s.repo.Delete(id)
 }
 
+// EnvironmentComponentService 环境组件服务
+type EnvironmentComponentService struct {
+	repo *repository.EnvironmentComponentRepo
+}
+
+func NewEnvironmentComponentService(repo *repository.EnvironmentComponentRepo) *EnvironmentComponentService {
+	return &EnvironmentComponentService{repo: repo}
+}
+
+func (s *EnvironmentComponentService) ListByEnv(envID string) ([]model.EnvironmentComponent, error) {
+	return s.repo.ListByEnv(envID)
+}
+
+func (s *EnvironmentComponentService) Replace(envID string, components []model.EnvironmentComponent) error {
+	return s.repo.Replace(envID, components)
+}
+
+func (s *EnvironmentComponentService) CloneComponents(fromEnvID, toEnvID string) error {
+	return s.repo.CloneComponents(fromEnvID, toEnvID)
+}
+
 // ComponentService 组件服务
 type ComponentService struct {
 	repo *repository.ComponentRepo
@@ -86,6 +107,10 @@ func NewComponentService(repo *repository.ComponentRepo) *ComponentService {
 
 func (s *ComponentService) List() ([]model.Component, error) {
 	return s.repo.List()
+}
+
+func (s *ComponentService) ListActiveWithVariables() ([]model.Component, error) {
+	return s.repo.ListActiveWithVariables()
 }
 
 func (s *ComponentService) GetByID(id string) (*model.Component, error) {
@@ -385,14 +410,20 @@ func (s *ArtifactVersionService) CloneArtifacts(fromEnvID, toEnvID string) error
 func CloneEnv(
 	configSvc *ConfigService,
 	artifactSvc *ArtifactVersionService,
+	envComponentSvc *EnvironmentComponentService,
 	fromEnvID, toEnvID, operator string,
 ) error {
-	// 1. 克隆配置
+	// 1. 克隆环境组件
+	if err := envComponentSvc.CloneComponents(fromEnvID, toEnvID); err != nil {
+		return fmt.Errorf("克隆环境组件失败: %w", err)
+	}
+
+	// 2. 克隆配置
 	if err := configSvc.CloneConfigs(fromEnvID, toEnvID, operator); err != nil {
 		return fmt.Errorf("克隆配置失败: %w", err)
 	}
 
-	// 2. 克隆制品版本
+	// 3. 克隆制品版本
 	if err := artifactSvc.CloneArtifacts(fromEnvID, toEnvID); err != nil {
 		return fmt.Errorf("克隆制品版本失败: %w", err)
 	}

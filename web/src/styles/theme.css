@@ -1,0 +1,161 @@
+:root {
+  --itcfg-bg: #f5f7fb;
+  --itcfg-surface: #ffffff;
+  --itcfg-surface-soft: #f8fafc;
+  --itcfg-border: #e5eaf3;
+  --itcfg-border-strong: #d7dfec;
+  --itcfg-text-primary: #172033;
+  --itcfg-text-secondary: #667085;
+  --itcfg-text-muted: #98a2b3;
+  --itcfg-primary: #2563eb;
+  --itcfg-primary-soft: #eff6ff;
+  --itcfg-success: #16a34a;
+  --itcfg-warning: #d97706;
+  --itcfg-danger: #dc2626;
+  --itcfg-radius-sm: 8px;
+  --itcfg-radius-md: 12px;
+  --itcfg-radius-lg: 18px;
+  --itcfg-shadow-card: 0 16px 40px rgba(15, 23, 42, 0.06);
+  --itcfg-shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--itcfg-bg);
+  color: var(--itcfg-text-primary);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0 4px;
+}
+
+.page-header-main {
+  min-width: 0;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--itcfg-text-primary);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+  margin-top: 6px;
+  color: var(--itcfg-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.page-card {
+  overflow: hidden;
+  border: 1px solid var(--itcfg-border) !important;
+  border-radius: var(--itcfg-radius-lg) !important;
+  box-shadow: var(--itcfg-shadow-card) !important;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.muted {
+  color: var(--itcfg-text-secondary);
+}
+
+.code-text {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--itcfg-success);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  padding: 20px;
+  border: 1px solid var(--itcfg-border);
+  border-radius: var(--itcfg-radius-lg);
+  background: var(--itcfg-surface);
+  box-shadow: var(--itcfg-shadow-soft);
+}
+
+.el-card {
+  --el-card-border-radius: var(--itcfg-radius-lg);
+  border-color: var(--itcfg-border) !important;
+}
+
+.el-table th.el-table__cell {
+  background: #f8fafc !important;
+  color: #475467;
+  font-weight: 600;
+}
+
+.el-dialog {
+  border-radius: var(--itcfg-radius-lg) !important;
+}
+
+.el-button {
+  font-weight: 500;
+}
+
+@media (max-width: 1100px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .page-header {
+    flex-direction: column;
+  }
+
+  .page-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -26,31 +26,42 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) error {
 // Customer 客户
 type Customer struct {
 	BaseModel
-	Name    string `gorm:"type:varchar(128);not null" json:"name"`
-	Code    string `gorm:"type:varchar(32);uniqueIndex;not null" json:"code"`
-	Contact string `gorm:"type:varchar(64)" json:"contact"`
-	Status  string `gorm:"type:varchar(16);default:active" json:"status"`
+	Name    string        `gorm:"type:varchar(128);not null" json:"name"`
+	Code    string        `gorm:"type:varchar(32);uniqueIndex;not null" json:"code"`
+	Contact string        `gorm:"type:varchar(64)" json:"contact"`
+	Status  string        `gorm:"type:varchar(16);default:active" json:"status"`
 	Envs    []CustomerEnv `gorm:"foreignKey:CustomerID" json:"envs,omitempty"`
 }
 
 // CustomerEnv 客户环境
 type CustomerEnv struct {
 	BaseModel
-	CustomerID  uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_id"`
-	EnvName     string    `gorm:"type:varchar(32);not null" json:"env_name"`
-	EnvKey      string    `gorm:"type:varchar(64);uniqueIndex;not null" json:"env_key"`
-	Description string    `gorm:"type:text" json:"description"`
+	CustomerID  uuid.UUID              `gorm:"type:uuid;not null;index" json:"customer_id"`
+	EnvName     string                 `gorm:"type:varchar(32);not null" json:"env_name"`
+	EnvKey      string                 `gorm:"type:varchar(64);uniqueIndex;not null" json:"env_key"`
+	Description string                 `gorm:"type:text" json:"description"`
+	Components  []EnvironmentComponent `gorm:"foreignKey:CustomerEnvID" json:"components,omitempty"`
+}
+
+// EnvironmentComponent 环境启用组件
+type EnvironmentComponent struct {
+	BaseModel
+	CustomerEnvID uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_env_component" json:"customer_env_id"`
+	ComponentID   uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_env_component" json:"component_id"`
+	Enabled       bool      `gorm:"default:true" json:"enabled"`
+	DeployOrder   int       `gorm:"default:0" json:"deploy_order"`
+	Component     Component `gorm:"foreignKey:ComponentID" json:"component,omitempty"`
 }
 
 // Component 组件定义
 type Component struct {
 	BaseModel
-	Name        string `gorm:"type:varchar(64);uniqueIndex;not null" json:"name"`
-	DisplayName string `gorm:"type:varchar(128);not null" json:"display_name"`
-	Description string `gorm:"type:text" json:"description"`
-	Category    string `gorm:"type:varchar(32)" json:"category"`
-	TemplateDir string `gorm:"type:varchar(256);not null" json:"template_dir"`
-	IsActive    bool   `gorm:"default:true" json:"is_active"`
+	Name        string              `gorm:"type:varchar(64);uniqueIndex;not null" json:"name"`
+	DisplayName string              `gorm:"type:varchar(128);not null" json:"display_name"`
+	Description string              `gorm:"type:text" json:"description"`
+	Category    string              `gorm:"type:varchar(32)" json:"category"`
+	TemplateDir string              `gorm:"type:varchar(256);not null" json:"template_dir"`
+	IsActive    bool                `gorm:"default:true" json:"is_active"`
 	Variables   []ComponentVariable `gorm:"foreignKey:ComponentID" json:"variables,omitempty"`
 }
 
@@ -83,36 +94,36 @@ type CustomerConfigValue struct {
 // ComponentArtifactVersion 制品版本关联
 type ComponentArtifactVersion struct {
 	BaseModel
-	CustomerEnvID    uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_env_id"`
-	ComponentID      uuid.UUID `gorm:"type:uuid;not null;index" json:"component_id"`
-	ArtifactType     string    `gorm:"type:varchar(32);not null" json:"artifact_type"`
-	ArtifactName     string    `gorm:"type:varchar(128);not null" json:"artifact_name"`
-	ArtifactVersion  string    `gorm:"type:varchar(64);not null" json:"artifact_version"`
-	RegistryURL      string    `gorm:"type:varchar(256)" json:"registry_url"`
+	CustomerEnvID   uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_env_id"`
+	ComponentID     uuid.UUID `gorm:"type:uuid;not null;index" json:"component_id"`
+	ArtifactType    string    `gorm:"type:varchar(32);not null" json:"artifact_type"`
+	ArtifactName    string    `gorm:"type:varchar(128);not null" json:"artifact_name"`
+	ArtifactVersion string    `gorm:"type:varchar(64);not null" json:"artifact_version"`
+	RegistryURL     string    `gorm:"type:varchar(256)" json:"registry_url"`
 }
 
 // DeployRecord 部署记录
 type DeployRecord struct {
 	BaseModel
-	CustomerEnvID     uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_env_id"`
-	VersionTag        string    `gorm:"type:varchar(64);not null" json:"version_tag"`
-	ConfigSnapshot    string    `gorm:"type:jsonb" json:"config_snapshot"`
-	ArtifactSnapshot  string    `gorm:"type:jsonb" json:"artifact_snapshot"`
-	PackageChecksum   string    `gorm:"type:varchar(128)" json:"package_checksum"`
-	DeployedAt        time.Time `json:"deployed_at"`
-	DeployedBy        string    `gorm:"type:varchar(64)" json:"deployed_by"`
-	Status            string    `gorm:"type:varchar(32);default:pending" json:"status"`
-	Notes             string    `gorm:"type:text" json:"notes"`
+	CustomerEnvID    uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_env_id"`
+	VersionTag       string    `gorm:"type:varchar(64);not null" json:"version_tag"`
+	ConfigSnapshot   string    `gorm:"type:jsonb" json:"config_snapshot"`
+	ArtifactSnapshot string    `gorm:"type:jsonb" json:"artifact_snapshot"`
+	PackageChecksum  string    `gorm:"type:varchar(128)" json:"package_checksum"`
+	DeployedAt       time.Time `json:"deployed_at"`
+	DeployedBy       string    `gorm:"type:varchar(64)" json:"deployed_by"`
+	Status           string    `gorm:"type:varchar(32);default:pending" json:"status"`
+	Notes            string    `gorm:"type:text" json:"notes"`
 }
 
 // ConfigVersion 配置版本快照
 type ConfigVersion struct {
 	BaseModel
-	CustomerEnvID   uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_env_id"`
-	Version         int       `gorm:"not null" json:"version"`
-	ConfigSnapshot  string    `gorm:"type:jsonb;not null" json:"config_snapshot"`
-	CreatedBy       string    `gorm:"type:varchar(64)" json:"created_by"`
-	ChangeSummary   string    `gorm:"type:text" json:"change_summary"`
+	CustomerEnvID  uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_env_id"`
+	Version        int       `gorm:"not null" json:"version"`
+	ConfigSnapshot string    `gorm:"type:jsonb;not null" json:"config_snapshot"`
+	CreatedBy      string    `gorm:"type:varchar(64)" json:"created_by"`
+	ChangeSummary  string    `gorm:"type:text" json:"change_summary"`
 }
 
 // User 系统用户

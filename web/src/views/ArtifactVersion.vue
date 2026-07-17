@@ -1,77 +1,67 @@
 <template>
-  <div>
-    <el-page-header @back="$router.back()" title="返回">
-      <template #content>
-        <span style="font-size: 16px; font-weight: 500">制品版本管理</span>
+  <div class="page artifacts-page">
+    <PageHeader title="制品版本管理" :subtitle="`环境 ID：${envId}`" back>
+      <template #actions>
+        <el-button type="primary" @click="openCreateDialog" :disabled="components.length === 0">
+          <el-icon><Plus /></el-icon> 添加制品版本
+        </el-button>
       </template>
-    </el-page-header>
+    </PageHeader>
 
-    <el-card style="margin-top: 20px">
-      <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <span>制品版本列表</span>
-          <el-button type="primary" @click="openCreateDialog">
-            <el-icon><Plus /></el-icon> 添加制品版本
-          </el-button>
-        </div>
-      </template>
+    <PageCard title="制品版本列表" subtitle="为环境已启用组件绑定镜像、Jar 或其他部署制品">
+      <el-alert v-if="components.length === 0" type="warning" :closable="false" class="page-alert">
+        当前环境还没有启用组件，请先回到环境管理选择需要部署的组件。
+      </el-alert>
 
-      <el-table :data="artifacts" stripe v-loading="loading">
-        <el-table-column label="组件" min-width="120">
+      <el-table :data="artifacts" stripe v-loading="loading" empty-text="暂无制品版本，请添加">
+        <el-table-column label="组件" min-width="170">
           <template #default="{ row }">
-            {{ getComponentName(row.component_id) }}
+            <div class="component-cell">
+              <div>{{ getComponentName(row.component_id) }}</div>
+              <div class="muted code-text">{{ getComponentKey(row.component_id) }}</div>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column prop="artifact_type" label="制品类型" width="110">
+        <el-table-column prop="artifact_type" label="制品类型" width="120">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.artifact_type }}</el-tag>
+            <el-tag effect="light">{{ getArtifactTypeLabel(row.artifact_type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="artifact_name" label="制品名称" min-width="150" />
-        <el-table-column prop="artifact_version" label="制品版本" width="120">
+        <el-table-column prop="artifact_name" label="制品名称" min-width="160" />
+        <el-table-column prop="artifact_version" label="制品版本" width="150">
           <template #default="{ row }">
-            <el-tag type="success">{{ row.artifact_version }}</el-tag>
+            <el-tag type="success" effect="light" class="code-text">{{ row.artifact_version }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="registry_url" label="仓库地址" min-width="200">
+        <el-table-column prop="registry_url" label="仓库地址 / 本地文件" min-width="260">
           <template #default="{ row }">
-            <span v-if="row.registry_url" style="font-family: monospace; font-size: 12px">
-              {{ row.registry_url }}
-            </span>
-            <span v-else style="color: #c0c4cc">未设置</span>
+            <span v-if="row.registry_url" class="code-text registry-url">{{ row.registry_url }}</span>
+            <span v-else class="muted">未设置</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
-            <el-popconfirm title="确认删除此制品版本?" @confirm="handleDelete(row.id)">
-              <template #reference>
-                <el-button size="small" type="danger">删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-space>
+              <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
+              <el-popconfirm title="确认删除此制品版本?" @confirm="handleDelete(row.id)">
+                <template #reference>
+                  <el-button size="small" type="danger" plain>删除</el-button>
+                </template>
+              </el-popconfirm>
+            </el-space>
           </template>
         </el-table-column>
       </el-table>
+    </PageCard>
 
-      <el-empty v-if="!loading && artifacts.length === 0" description="暂无制品版本，请添加" />
-    </el-card>
-
-    <!-- 添加/编辑对话框 -->
-    <el-dialog
-      v-model="showDialog"
-      :title="isEditing ? '编辑制品版本' : '添加制品版本'"
-      width="550px"
-      @close="resetForm"
-    >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+    <el-dialog v-model="showDialog" :title="isEditing ? '编辑制品版本' : '添加制品版本'" width="560px" @close="resetForm">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="组件" prop="component_id">
           <el-select v-model="form.component_id" placeholder="请选择组件" style="width: 100%">
-            <el-option
-              v-for="comp in components"
-              :key="comp.id"
-              :label="comp.display_name"
-              :value="comp.id"
-            />
+            <el-option v-for="comp in components" :key="comp.id" :label="comp.display_name" :value="comp.id">
+              <span>{{ comp.display_name }}</span>
+              <span class="option-meta">{{ comp.template_dir || comp.name }}</span>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="制品类型" prop="artifact_type">
@@ -90,14 +80,12 @@
           <el-input v-model="form.artifact_version" placeholder="例如: 1.25.0, 2.3.1" />
         </el-form-item>
         <el-form-item label="仓库地址">
-          <el-input v-model="form.registry_url" placeholder="例如: harbor.example.com/library/nginx:1.25.0" />
+          <el-input v-model="form.registry_url" placeholder="镜像地址或本地 tar 文件路径" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">
-          {{ isEditing ? '保存' : '添加' }}
-        </el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">{{ isEditing ? '保存' : '添加' }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -107,8 +95,9 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { getArtifacts, createArtifact, updateArtifact, deleteArtifact } from '../api'
-import { getComponents } from '../api'
+import PageHeader from '../components/PageHeader.vue'
+import PageCard from '../components/PageCard.vue'
+import { getArtifacts, createArtifact, updateArtifact, deleteArtifact, getEnvComponents } from '../api'
 
 const route = useRoute()
 const envId = route.params.envId as string
@@ -122,13 +111,8 @@ const submitting = ref(false)
 const editingId = ref('')
 const formRef = ref<FormInstance>()
 
-const form = ref({
-  component_id: '',
-  artifact_type: '',
-  artifact_name: '',
-  artifact_version: '',
-  registry_url: '',
-})
+const form = ref({ component_id: '', artifact_type: '', artifact_name: '', artifact_version: '', registry_url: '' })
+const typeLabels: Record<string, string> = { docker: 'Docker 镜像', jar: 'Jar 包', binary: '二进制', helm: 'Helm Chart', other: '其他' }
 
 const rules: FormRules = {
   component_id: [{ required: true, message: '请选择组件', trigger: 'change' }],
@@ -137,10 +121,13 @@ const rules: FormRules = {
   artifact_version: [{ required: true, message: '请输入制品版本', trigger: 'blur' }],
 }
 
-const getComponentName = (id: string) => {
-  const comp = components.value.find((c: any) => c.id === id)
-  return comp ? comp.display_name : id
+const getComponent = (id: string) => components.value.find((c: any) => c.id === id)
+const getComponentName = (id: string) => getComponent(id)?.display_name || id
+const getComponentKey = (id: string) => {
+  const comp = getComponent(id)
+  return comp ? (comp.template_dir || comp.name) : id
 }
+const getArtifactTypeLabel = (type: string) => typeLabels[type] || type
 
 const fetchArtifacts = async () => {
   loading.value = true
@@ -156,10 +143,10 @@ const fetchArtifacts = async () => {
 
 const fetchComponents = async () => {
   try {
-    const res: any = await getComponents()
-    components.value = res.data || []
+    const res: any = await getEnvComponents(envId)
+    components.value = (res.data || []).map((item: any) => item.component).filter(Boolean)
   } catch {
-    ElMessage.error('获取组件列表失败')
+    ElMessage.error('获取环境组件失败')
   }
 }
 
@@ -184,20 +171,13 @@ const openEditDialog = (row: any) => {
 }
 
 const resetForm = () => {
-  form.value = {
-    component_id: '',
-    artifact_type: '',
-    artifact_name: '',
-    artifact_version: '',
-    registry_url: '',
-  }
+  form.value = { component_id: '', artifact_type: '', artifact_name: '', artifact_version: '', registry_url: '' }
   formRef.value?.resetFields()
 }
 
 const handleSubmit = async () => {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
-
   submitting.value = true
   try {
     if (isEditing.value) {
@@ -231,3 +211,11 @@ onMounted(() => {
   fetchArtifacts()
 })
 </script>
+
+<style scoped>
+.artifacts-page { max-width: 1440px; margin: 0 auto; }
+.page-alert { margin-bottom: 16px; }
+.component-cell { line-height: 1.45; }
+.registry-url { color: #1d4ed8; font-size: 12px; }
+.option-meta { float: right; color: var(--itcfg-text-muted); font-size: 12px; }
+</style>

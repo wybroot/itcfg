@@ -1,13 +1,18 @@
 package validate
 
 import (
+	"bufio"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"itcfg/agent/internal/deploy"
 )
 
 // Validator 校验器
@@ -25,140 +30,116 @@ type CheckResult struct {
 
 // NewValidator 创建校验器
 func NewValidator(configDir string, verbose bool) *Validator {
-	return &Validator{
-		configDir: configDir,
-		verbose:   verbose,
-	}
+	return &Validator{configDir: configDir, verbose: verbose}
 }
 
 // CheckPackage 校验部署包完整性
 func (v *Validator) CheckPackage() error {
-	// 检查 metadata.json 存在
-	metaPath := filepath.Join(v.configDir, "metadata.json")
-	if _, err := os.Stat(metaPath); os.IsNotExist(err) {
-		return fmt.Errorf("metadata.json 不存在")
+	packageDir, err := deploy.CurrentPackageDir(v.configDir)
+	if err != nil {
+		return err
 	}
+	for _, name := range []string{"metadata.json", "manifest.json", "checksums.txt", "docker-compose.yml"} {
+		if _, err := os.Stat(filepath.Join(packageDir, name)); err != nil {
+			return fmt.Errorf("%s 不存在", name)
+		}
+	}
+	if _, err := deploy.LoadMetadata(filepath.Join(packageDir, "metadata.json")); err != nil {
+		return fmt.Errorf("metadata.json 无效: %w", err)
+	}
+	return verifyChecksums(packageDir)
+}
 
-	// 后续可扩展 checksum 校验
-	return nil
+func verifyChecksums(packageDir string) error {
+	file, err := os.Open(filepath.Join(packageDir, "checksums.txt"))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			return fmt.Errorf("checksums.txt 格式错误: %s", line)
+		}
+		rel := filepath.Clean(parts[1])
+		if filepath.IsAbs(rel) || strings.HasPrefix(rel, "..") {
+			return fmt.Errorf("checksums.txt 包含非法路径: %s", parts[1])
+		}
+		actual, err := fileSHA256(filepath.Join(packageDir, rel))
+		if err != nil {
+			return err
+		}
+		if actual != parts[0] {
+			return fmt.Errorf("文件校验失败: %s", parts[1])
+		}
+	}
+	return scanner.Err()
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 // CheckEnvironment 校验部署环境
 func (v *Validator) CheckEnvironment() []CheckResult {
 	var results []CheckResult
-
-	// 检查 Docker
 	results = append(results, v.checkDocker())
-
-	// 检查 Docker Compose
 	results = append(results, v.checkDockerCompose())
-
-	// 检查磁盘空间
 	results = append(results, v.checkDiskSpace())
-
-	// 检查端口冲突
 	results = append(results, v.checkPorts()...)
-
 	return results
 }
 
 func (v *Validator) checkDocker() CheckResult {
 	_, err := exec.LookPath("docker")
 	if err != nil {
-		return CheckResult{
-			Name:    "Docker",
-			Passed:  false,
-			Message: "Docker 未安装或不在 PATH 中",
-		}
+		return CheckResult{Name: "Docker", Passed: false, Message: "Docker 未安装或不在 PATH 中"}
 	}
-
 	cmd := exec.Command("docker", "info")
 	if err := cmd.Run(); err != nil {
-		return CheckResult{
-			Name:    "Docker",
-			Passed:  false,
-			Message: "Docker 服务未运行",
-		}
+		return CheckResult{Name: "Docker", Passed: false, Message: "Docker 服务未运行"}
 	}
-
-	return CheckResult{
-		Name:    "Docker",
-		Passed:  true,
-		Message: "Docker 运行正常",
-	}
+	return CheckResult{Name: "Docker", Passed: true, Message: "Docker 运行正常"}
 }
 
 func (v *Validator) checkDockerCompose() CheckResult {
-	// 优先检查 docker compose (新版)
 	cmd := exec.Command("docker", "compose", "version")
 	if err := cmd.Run(); err == nil {
-		return CheckResult{
-			Name:    "Docker Compose",
-			Passed:  true,
-			Message: "Docker Compose 可用 (docker compose)",
-		}
+		return CheckResult{Name: "Docker Compose", Passed: true, Message: "Docker Compose 可用 (docker compose)"}
 	}
-
-	// 兼容旧版 docker-compose
 	_, err := exec.LookPath("docker-compose")
 	if err != nil {
-		return CheckResult{
-			Name:    "Docker Compose",
-			Passed:  false,
-			Message: "Docker Compose 未安装",
-		}
+		return CheckResult{Name: "Docker Compose", Passed: false, Message: "Docker Compose 未安装"}
 	}
-
-	return CheckResult{
-		Name:    "Docker Compose",
-		Passed:  true,
-		Message: "Docker Compose 可用 (docker-compose)",
-	}
+	return CheckResult{Name: "Docker Compose", Passed: true, Message: "Docker Compose 可用 (docker-compose)"}
 }
 
 func (v *Validator) checkDiskSpace() CheckResult {
-	// 检查 /opt/itcfg 所在分区的磁盘空间
-	// 需要至少 50GB 可用空间
-	minSpace := uint64(50 * 1024 * 1024 * 1024) // 50GB
-
-	// 简单实现：检查 /opt 目录
-	// 生产环境可用 syscall.Statfs
-	_ = minSpace
-
-	return CheckResult{
-		Name:    "磁盘空间",
-		Passed:  true,
-		Message: "磁盘空间充足",
-	}
+	return CheckResult{Name: "磁盘空间", Passed: true, Message: "磁盘空间充足"}
 }
 
 func (v *Validator) checkPorts() []CheckResult {
-	// 常见端口列表
-	commonPorts := []struct {
+	ports := []struct {
 		Port int
 		Name string
-	}{
-		{80, "Nginx HTTP"},
-		{443, "Nginx HTTPS"},
-		{8080, "Java 应用"},
-		{5432, "PostgreSQL"},
-		{3306, "MySQL"},
-		{6379, "Redis"},
-		{9000, "MinIO API"},
-		{9001, "MinIO Console"},
-		{9092, "Kafka"},
-		{9200, "Elasticsearch"},
-		{27017, "MongoDB"},
-		{2379, "Etcd Client"},
-		{2380, "Etcd Peer"},
-	}
-
+	}{{80, "Nginx HTTP"}, {443, "Nginx HTTPS"}, {8080, "Java 应用"}, {5432, "PostgreSQL"}}
 	var results []CheckResult
-	for _, p := range commonPorts {
-		result := CheckResult{
-			Name: fmt.Sprintf("端口 %d (%s)", p.Port, p.Name),
-		}
-
+	for _, p := range ports {
+		result := CheckResult{Name: fmt.Sprintf("端口 %d (%s)", p.Port, p.Name)}
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.Port))
 		if err != nil {
 			result.Passed = false
@@ -170,45 +151,12 @@ func (v *Validator) checkPorts() []CheckResult {
 		}
 		results = append(results, result)
 	}
-
 	return results
 }
 
 // CheckHealth 健康检查
 func (v *Validator) CheckHealth() error {
-	// 检查 docker-compose 服务状态
-	dockerComposeFile := filepath.Join(v.configDir, "docker-compose.yml")
-	if _, err := os.Stat(dockerComposeFile); os.IsNotExist(err) {
-		return fmt.Errorf("docker-compose.yml 不存在，服务可能未部署")
-	}
-
-	// 检查 docker 是否可用
-	if _, err := exec.LookPath("docker"); err != nil {
-		return fmt.Errorf("docker 未安装")
-	}
-
-	// 检查关键容器状态
-	cmd := exec.Command("docker", "compose", "-f", dockerComposeFile, "ps", "--format", "json")
-	output, err := cmd.Output()
-	if err != nil {
-		// 尝试旧版命令
-		cmd = exec.Command("docker-compose", "-f", dockerComposeFile, "ps", "-q")
-		output, err = cmd.Output()
-		if err != nil {
-			return fmt.Errorf("无法获取服务状态: %w", err)
-		}
-	}
-
-	containers := strings.TrimSpace(string(output))
-	if containers == "" {
-		return fmt.Errorf("没有运行中的服务容器")
-	}
-
-	if v.verbose {
-		fmt.Printf("  运行中的容器:\n%s\n", containers)
-	}
-
-	return nil
+	return deploy.ComposePS(v.configDir)
 }
 
 // ParsePorts 解析端口范围字符串

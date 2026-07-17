@@ -32,6 +32,7 @@ func (d *Database) AutoMigrate() error {
 	return d.DB.AutoMigrate(
 		&model.Customer{},
 		&model.CustomerEnv{},
+		&model.EnvironmentComponent{},
 		&model.Component{},
 		&model.ComponentVariable{},
 		&model.CustomerConfigValue{},
@@ -126,6 +127,56 @@ func (r *EnvRepo) Delete(id string) error {
 	return r.db.Delete(&model.CustomerEnv{}, "id = ?", id).Error
 }
 
+// ==================== 环境组件 Repository ====================
+
+type EnvironmentComponentRepo struct {
+	db *gorm.DB
+}
+
+func NewEnvironmentComponentRepo(db *gorm.DB) *EnvironmentComponentRepo {
+	return &EnvironmentComponentRepo{db: db}
+}
+
+func (r *EnvironmentComponentRepo) ListByEnv(envID string) ([]model.EnvironmentComponent, error) {
+	var components []model.EnvironmentComponent
+	err := r.db.Preload("Component.Variables", func(db *gorm.DB) *gorm.DB {
+		return db.Order("sort_order ASC, created_at ASC")
+	}).Where("customer_env_id = ? AND enabled = ?", envID, true).
+		Order("deploy_order ASC, created_at ASC").Find(&components).Error
+	return components, err
+}
+
+func (r *EnvironmentComponentRepo) Replace(envID string, components []model.EnvironmentComponent) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("customer_env_id = ?", envID).Delete(&model.EnvironmentComponent{}).Error; err != nil {
+			return err
+		}
+		for i := range components {
+			if err := tx.Create(&components[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *EnvironmentComponentRepo) CloneComponents(fromEnvID, toEnvID string) error {
+	var source []model.EnvironmentComponent
+	if err := r.db.Where("customer_env_id = ?", fromEnvID).Find(&source).Error; err != nil {
+		return err
+	}
+	for _, component := range source {
+		component.ID = uuid.Nil
+		component.CustomerEnvID = uuid.MustParse(toEnvID)
+		component.CreatedAt = time.Now()
+		component.UpdatedAt = time.Now()
+		if err := r.db.Create(&component).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ==================== 组件 Repository ====================
 
 type ComponentRepo struct {
@@ -138,7 +189,17 @@ func NewComponentRepo(db *gorm.DB) *ComponentRepo {
 
 func (r *ComponentRepo) List() ([]model.Component, error) {
 	var components []model.Component
-	err := r.db.Order("created_at DESC").Find(&components).Error
+	err := r.db.Preload("Variables", func(db *gorm.DB) *gorm.DB {
+		return db.Order("sort_order ASC, created_at ASC")
+	}).Order("created_at DESC").Find(&components).Error
+	return components, err
+}
+
+func (r *ComponentRepo) ListActiveWithVariables() ([]model.Component, error) {
+	var components []model.Component
+	err := r.db.Preload("Variables", func(db *gorm.DB) *gorm.DB {
+		return db.Order("sort_order ASC, created_at ASC")
+	}).Where("is_active = ?", true).Order("created_at DESC").Find(&components).Error
 	return components, err
 }
 

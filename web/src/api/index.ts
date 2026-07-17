@@ -124,12 +124,18 @@ export const deleteComponent = (id: string) => api.delete(`/components/${id}`)
 export const getComponentVariables = (componentId: string) =>
   api.get(`/components/${componentId}/variables`)
 
+export const getEnvComponents = (envId: string) => api.get(`/envs/${envId}/components`)
+
+export const replaceEnvComponents = (envId: string, data: {
+  components: Array<{ component_id: string; enabled?: boolean; deploy_order?: number }>
+}) => api.put(`/envs/${envId}/components`, data)
+
 // ==================== 配置 API ====================
 
 export const getEnvConfigs = (envId: string) => api.get(`/envs/${envId}/configs`)
 
-export const updateEnvConfigs = (envId: string, data: { values: Record<string, string>; updated_by?: string }) =>
-  api.put(`/envs/${envId}/configs`, data)
+export const updateEnvConfigs = (envId: string, componentId: string, data: { values: Record<string, string>; updated_by?: string }) =>
+  api.put(`/envs/${envId}/components/${componentId}/configs`, data)
 
 export const previewConfigs = (envId: string, componentName: string) =>
   api.post(`/envs/${envId}/configs/preview`, { component_name: componentName })

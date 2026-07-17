@@ -1,121 +1,90 @@
 <template>
-  <div class="dashboard">
-    <!-- 欢迎横幅 -->
-    <div class="welcome-banner">
-      <div class="welcome-info">
-        <h2>👋 欢迎回来，{{ userName }}</h2>
+  <div class="page dashboard">
+    <section class="hero-card">
+      <div>
+        <div class="eyebrow">配置交付操作台</div>
+        <h1>欢迎回来，{{ userName }}</h1>
         <p>{{ greetMsg }}</p>
       </div>
-      <div class="welcome-stats">
-        <div class="mini-stat">
-          <span class="mini-num">{{ stats.customers }}</span>
-          <span class="mini-label">客户</span>
+      <div class="hero-stats">
+        <div>
+          <strong>{{ stats.customers }}</strong>
+          <span>客户</span>
         </div>
-        <div class="mini-stat">
-          <span class="mini-num">{{ stats.components }}</span>
-          <span class="mini-label">组件</span>
+        <div>
+          <strong>{{ stats.components }}</strong>
+          <span>组件</span>
         </div>
-        <div class="mini-stat">
-          <span class="mini-num">{{ stats.todayDeploys }}</span>
-          <span class="mini-label">今日部署</span>
+        <div>
+          <strong>{{ stats.todayDeploys }}</strong>
+          <span>今日部署</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="metric-grid">
+      <div v-for="card in statCards" :key="card.label" class="metric-card">
+        <div class="metric-icon" :style="{ color: card.color, background: card.bg }">
+          <el-icon :size="24"><component :is="card.icon" /></el-icon>
+        </div>
+        <div>
+          <div class="metric-value">{{ card.value }}</div>
+          <div class="metric-label">{{ card.label }}</div>
         </div>
       </div>
     </div>
 
-    <!-- 统计卡片 -->
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :span="6" v-for="card in statCards" :key="card.label">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-card-inner">
-            <div class="stat-icon" :style="{ background: card.bg }">
-              <el-icon :size="28" :color="card.color"><component :is="card.icon" /></el-icon>
-            </div>
-            <div class="stat-body">
-              <div class="stat-value" :style="{ color: card.color }">{{ card.value }}</div>
-              <div class="stat-label">{{ card.label }}</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 快捷操作 + 健康状态 -->
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :span="16">
-        <el-card shadow="never">
-          <template #header>
-            <span style="font-weight:600">快捷操作</span>
-          </template>
+    <el-row :gutter="18">
+      <el-col :lg="16" :md="24">
+        <PageCard title="快捷操作" subtitle="从这里进入日常配置交付流程">
           <div class="quick-actions">
-            <div class="action-card" @click="$router.push('/customers')">
-              <el-icon :size="32" color="#409EFF"><OfficeBuilding /></el-icon>
-              <span>客户管理</span>
-              <small>创建和管理客户</small>
-            </div>
-            <div class="action-card" @click="$router.push('/components')">
-              <el-icon :size="32" color="#67C23A"><Grid /></el-icon>
-              <span>组件管理</span>
-              <small>查看系统组件定义</small>
-            </div>
-            <div class="action-card" @click="$router.push('/templates')">
-              <el-icon :size="32" color="#E6A23C"><Document /></el-icon>
-              <span>模板管理</span>
-              <small>浏览配置模板</small>
-            </div>
-            <div class="action-card" @click="$router.push('/users')">
-              <el-icon :size="32" color="#F56C6C"><UserFilled /></el-icon>
-              <span>用户管理</span>
-              <small>管理系统用户</small>
-            </div>
-            <div class="action-card" @click="$router.push('/notify-configs')">
-              <el-icon :size="32" color="#909399"><Bell /></el-icon>
-              <span>通知配置</span>
-              <small>Webhook 通知设置</small>
+            <div v-for="action in quickActions" :key="action.title" class="action-card" @click="$router.push(action.path)">
+              <div class="action-icon" :style="{ color: action.color, background: action.bg }">
+                <el-icon :size="26"><component :is="action.icon" /></el-icon>
+              </div>
+              <span>{{ action.title }}</span>
+              <small>{{ action.desc }}</small>
             </div>
             <div class="action-card" @click="refreshAll">
-              <el-icon :size="32" color="#409EFF"><Refresh /></el-icon>
+              <div class="action-icon refresh"><el-icon :size="26"><Refresh /></el-icon></div>
               <span>刷新数据</span>
               <small>重新加载面板数据</small>
             </div>
           </div>
-        </el-card>
+        </PageCard>
       </el-col>
-      <el-col :span="8">
-        <el-card shadow="never">
-          <template #header>
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="font-weight:600">系统健康</span>
-              <el-tag :type="healthStatus.type" size="small">{{ healthStatus.text }}</el-tag>
-            </div>
+      <el-col :lg="8" :md="24">
+        <PageCard title="系统健康" subtitle="后端服务、数据库与模板状态">
+          <template #actions>
+            <el-tag :type="healthStatus.type" size="small">{{ healthStatus.text }}</el-tag>
           </template>
-          <div class="health-list">
-            <div class="health-item" v-for="item in healthItems" :key="item.name">
-              <div class="health-dot" :class="item.status"></div>
+          <div v-loading="healthLoading" class="health-list">
+            <div v-for="item in healthItems" :key="item.name" class="health-item">
+              <span class="health-dot" :class="item.status"></span>
               <span>{{ item.label }}</span>
-              <span style="margin-left:auto;color:#909399;font-size:13px">{{ item.status === 'ok' ? '正常' : '异常' }}</span>
+              <span class="health-state">{{ item.status === 'ok' ? '正常' : '异常' }}</span>
             </div>
           </div>
-        </el-card>
+        </PageCard>
       </el-col>
     </el-row>
 
-    <!-- 使用流程 -->
-    <el-card shadow="never" style="margin-top: 20px">
-      <template #header><span style="font-weight:600">使用流程</span></template>
+    <PageCard title="交付流程" subtitle="从客户环境到离线部署包的标准闭环">
       <el-steps :active="5" align-center finish-status="success">
         <el-step title="创建客户" description="录入客户信息" />
-        <el-step title="配置环境" description="生产/测试/灾备" />
+        <el-step title="配置环境" description="选择组件" />
         <el-step title="填写配置" description="按组件填写变量" />
-        <el-step title="导出部署包" description="一键导出" />
-        <el-step title="Agent 部署" description="自动部署上线" />
+        <el-step title="绑定制品" description="维护镜像版本" />
+        <el-step title="导出部署" description="Agent 一键安装" />
       </el-steps>
-    </el-card>
+    </PageCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import axios from 'axios'
+import PageCard from '../components/PageCard.vue'
 import { getDashboardStats, getUser } from '../api'
 
 const user = getUser()
@@ -123,26 +92,27 @@ const userName = user?.nickname || user?.username || '管理员'
 
 const greetMsg = computed(() => {
   const h = new Date().getHours()
-  if (h < 9) return '新的一天开始了，看看今天的部署计划吧 ☀️'
-  if (h < 12) return '上午好，今天的工作开始了 💪'
-  if (h < 14) return '午安，别忘了检查环境状态 👀'
-  if (h < 18) return '下午好，继续保持高效节奏 🚀'
-  return '辛苦了，回顾一下今天的工作成果 📊'
+  if (h < 12) return '上午好，建议先检查环境状态和近期部署记录。'
+  if (h < 18) return '下午好，可以继续推进客户环境配置和部署包导出。'
+  return '辛苦了，回顾今日交付进度并确认部署状态。'
 })
 
-const stats = reactive({
-  customers: 0,
-  components: 0,
-  todayDeploys: 0,
-  successRate: 100,
-})
+const stats = reactive({ customers: 0, components: 0, todayDeploys: 0, successRate: 100 })
 
 const statCards = computed(() => [
-  { label: '客户数量', value: stats.customers, icon: 'OfficeBuilding', color: '#409EFF', bg: '#ecf5ff' },
-  { label: '组件模板', value: stats.components, icon: 'Grid', color: '#67C23A', bg: '#f0f9eb' },
-  { label: '今日部署', value: stats.todayDeploys, icon: 'Promotion', color: '#E6A23C', bg: '#fdf6ec' },
-  { label: '部署成功率', value: stats.successRate + '%', icon: 'CircleCheck', color: '#F56C6C', bg: '#fef0f0' },
+  { label: '客户数量', value: stats.customers, icon: 'OfficeBuilding', color: '#2563eb', bg: '#eff6ff' },
+  { label: '组件模板', value: stats.components, icon: 'Grid', color: '#16a34a', bg: '#f0fdf4' },
+  { label: '今日部署', value: stats.todayDeploys, icon: 'Promotion', color: '#d97706', bg: '#fffbeb' },
+  { label: '部署成功率', value: stats.successRate + '%', icon: 'CircleCheck', color: '#dc2626', bg: '#fef2f2' },
 ])
+
+const quickActions = [
+  { title: '客户管理', desc: '创建和管理客户', path: '/customers', icon: 'OfficeBuilding', color: '#2563eb', bg: '#eff6ff' },
+  { title: '组件管理', desc: '维护系统组件', path: '/components', icon: 'Grid', color: '#16a34a', bg: '#f0fdf4' },
+  { title: '模板管理', desc: '浏览配置模板', path: '/templates', icon: 'Document', color: '#d97706', bg: '#fffbeb' },
+  { title: '用户管理', desc: '管理系统用户', path: '/users', icon: 'UserFilled', color: '#7c3aed', bg: '#f5f3ff' },
+  { title: '通知配置', desc: 'Webhook 通知设置', path: '/notify-configs', icon: 'Bell', color: '#475467', bg: '#f8fafc' },
+]
 
 const fetchStats = async () => {
   try {
@@ -161,10 +131,10 @@ const healthLoading = ref(false)
 const healthStatus = computed(() => {
   const vals = [health.service, health.database, health.templates]
   const allOk = vals.every(v => v === 'ok')
-  const allErr = vals.some(v => v === 'error')
+  const anyErr = vals.some(v => v === 'error')
   if (allOk) return { type: 'success' as const, text: '运行正常' }
-  if (allErr) return { type: 'danger' as const, text: '服务异常' }
-  return { type: 'warning' as const, text: '部分异常' }
+  if (anyErr) return { type: 'danger' as const, text: '服务异常' }
+  return { type: 'warning' as const, text: '检查中' }
 })
 
 const healthItems = computed(() => [
@@ -188,49 +158,34 @@ const fetchHealth = async () => {
 }
 
 const refreshAll = () => { fetchStats(); fetchHealth() }
-
 onMounted(refreshAll)
 </script>
 
 <style scoped>
-.dashboard { max-width: 1400px; margin: 0 auto; }
-
-.welcome-banner {
-  background: linear-gradient(135deg, #1e3a5f 0%, #2a5298 50%, #409EFF 100%);
-  border-radius: 12px;
-  padding: 28px 36px;
-  display: flex; justify-content: space-between; align-items: center;
-  color: #fff;
-}
-.welcome-info h2 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
-.welcome-info p { margin: 0; opacity: 0.8; font-size: 14px; }
-.welcome-stats { display: flex; gap: 32px; }
-.mini-stat { text-align: center; }
-.mini-num { display: block; font-size: 28px; font-weight: 700; }
-.mini-label { font-size: 13px; opacity: 0.7; }
-
-.stat-card { border-radius: 10px; }
-.stat-card-inner { display: flex; align-items: center; gap: 16px; padding: 4px 0; }
-.stat-icon { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.stat-value { font-size: 28px; font-weight: 700; }
-.stat-label { font-size: 13px; color: #909399; margin-top: 2px; }
-
-.quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.action-card {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 24px 12px;
-  border-radius: 10px;
-  border: 1px solid #ebeef5;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.action-card:hover { border-color: #409EFF; box-shadow: 0 2px 12px rgba(64,158,255,0.15); transform: translateY(-2px); }
-.action-card span { font-size: 14px; font-weight: 500; color: #303133; }
-.action-card small { font-size: 12px; color: #909399; }
-
-.health-list { display: flex; flex-direction: column; gap: 16px; }
+.dashboard { max-width: 1440px; margin: 0 auto; }
+.hero-card { display: flex; justify-content: space-between; gap: 24px; padding: 30px 34px; color: #fff; border-radius: 24px; background: radial-gradient(circle at 78% 18%, rgba(34, 211, 238, .35), transparent 28%), linear-gradient(135deg, #0f172a, #1d4ed8); box-shadow: 0 24px 60px rgba(37, 99, 235, .22); }
+.eyebrow { color: rgba(255,255,255,.72); font-size: 13px; font-weight: 600; letter-spacing: .08em; }
+.hero-card h1 { margin: 8px 0 8px; font-size: 28px; }
+.hero-card p { margin: 0; color: rgba(255,255,255,.78); }
+.hero-stats { display: flex; align-items: center; gap: 18px; }
+.hero-stats div { min-width: 92px; padding: 14px 16px; text-align: center; border: 1px solid rgba(255,255,255,.18); border-radius: 16px; background: rgba(255,255,255,.1); }
+.hero-stats strong { display: block; font-size: 28px; }
+.hero-stats span { color: rgba(255,255,255,.72); font-size: 12px; }
+.metric-card { display: flex; align-items: center; gap: 14px; }
+.metric-icon, .action-icon { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 16px; }
+.metric-value { font-size: 28px; font-weight: 750; }
+.metric-label { color: var(--itcfg-text-secondary); font-size: 13px; }
+.quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.action-card { padding: 20px; cursor: pointer; border: 1px solid var(--itcfg-border); border-radius: 18px; background: var(--itcfg-surface); transition: .2s ease; }
+.action-card:hover { transform: translateY(-3px); border-color: #bfdbfe; box-shadow: var(--itcfg-shadow-soft); }
+.action-card span { display: block; margin-top: 12px; font-weight: 650; }
+.action-card small { display: block; margin-top: 5px; color: var(--itcfg-text-secondary); }
+.action-icon.refresh { color: #2563eb; background: #eff6ff; }
+.health-list { display: flex; flex-direction: column; gap: 16px; min-height: 170px; }
 .health-item { display: flex; align-items: center; gap: 10px; }
-.health-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.health-dot.ok { background: #67C23A; box-shadow: 0 0 6px rgba(103,194,58,0.5); }
-.health-dot.err { background: #F56C6C; box-shadow: 0 0 6px rgba(245,108,108,0.5); }
+.health-dot { width: 9px; height: 9px; border-radius: 50%; }
+.health-dot.ok { background: var(--itcfg-success); box-shadow: 0 0 0 4px rgba(22, 163, 74, .12); }
+.health-dot.err { background: var(--itcfg-danger); box-shadow: 0 0 0 4px rgba(220, 38, 38, .12); }
+.health-state { margin-left: auto; color: var(--itcfg-text-secondary); font-size: 13px; }
+@media (max-width: 1000px) { .hero-card { flex-direction: column; } .quick-actions { grid-template-columns: repeat(2, 1fr); } }
 </style>

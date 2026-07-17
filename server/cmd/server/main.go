@@ -50,14 +50,21 @@ func main() {
 	}
 	log.Println("数据库迁移完成")
 
+	// 初始化模板目录
+	templateDir := os.Getenv("TEMPLATE_DIR")
+	if templateDir == "" {
+		templateDir = "templates"
+	}
+
 	// 插入种子数据
-	if err := repository.SeedComponents(db.DB); err != nil {
+	if err := repository.SeedComponents(db.DB, templateDir); err != nil {
 		log.Printf("种子数据插入失败: %v", err)
 	}
 
 	// 初始化 Repository
 	customerRepo := repository.NewCustomerRepo(db.DB)
 	envRepo := repository.NewEnvRepo(db.DB)
+	envComponentRepo := repository.NewEnvironmentComponentRepo(db.DB)
 	componentRepo := repository.NewComponentRepo(db.DB)
 	configValueRepo := repository.NewConfigValueRepo(db.DB)
 	deployRecordRepo := repository.NewDeployRecordRepo(db.DB)
@@ -78,6 +85,7 @@ func main() {
 	notifySvc := notify.NewService(notifyConfigRepo)
 	customerSvc := service.NewCustomerService(customerRepo)
 	envSvc := service.NewEnvService(envRepo)
+	envComponentSvc := service.NewEnvironmentComponentService(envComponentRepo)
 	componentSvc := service.NewComponentService(componentRepo)
 	// 加密密钥（敏感配置加密存储）
 	encryptionKey := os.Getenv("ENCRYPTION_KEY")
@@ -88,10 +96,6 @@ func main() {
 	artifactVersionSvc := service.NewArtifactVersionService(artifactVersionRepo)
 
 	// 初始化模板引擎
-	templateDir := os.Getenv("TEMPLATE_DIR")
-	if templateDir == "" {
-		templateDir = "templates"
-	}
 	templateEngine := template.NewEngine(templateDir)
 
 	// 初始化导出服务
@@ -101,12 +105,12 @@ func main() {
 	}
 	os.MkdirAll(exportDir, 0755)
 	packageExporter := service.NewPackageExporter(
-		configSvc, componentSvc, envSvc, customerSvc, templateEngine, exportDir,
+		configSvc, componentSvc, envSvc, customerSvc, envComponentSvc, artifactVersionSvc, deployRecordSvc, templateEngine, exportDir,
 	)
 
 	// 初始化 Handler
 	h := handler.NewHandler(
-		customerSvc, envSvc, componentSvc, configSvc, deployRecordSvc,
+		customerSvc, envSvc, envComponentSvc, componentSvc, configSvc, deployRecordSvc,
 		templateEngine, packageExporter, versionSvc, artifactVersionSvc, authSvc, notifySvc,
 	)
 
@@ -158,10 +162,10 @@ func main() {
 		}
 
 		c.JSON(200, gin.H{
-			"status":   status,
-			"service":  "itcfg-server",
+			"status":  status,
+			"service": "itcfg-server",
 			"checks": gin.H{
-				"database": dbStatus,
+				"database":  dbStatus,
 				"templates": templateStatus,
 			},
 		})

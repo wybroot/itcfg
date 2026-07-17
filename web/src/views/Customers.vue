@@ -1,54 +1,58 @@
 <template>
-  <div>
-    <el-card>
-      <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <span>客户列表</span>
-          <el-button type="primary" @click="showCreateDialog = true">
-            <el-icon><Plus /></el-icon> 新建客户
-          </el-button>
-        </div>
+  <div class="page customers-page">
+    <PageHeader title="客户管理" subtitle="维护客户信息，并进入客户环境配置">
+      <template #actions>
+        <el-button type="primary" @click="showCreateDialog = true">
+          <el-icon><Plus /></el-icon> 新建客户
+        </el-button>
       </template>
+    </PageHeader>
 
-      <el-table :data="customers" stripe v-loading="loading">
-        <el-table-column prop="name" label="客户名称" min-width="150" />
-        <el-table-column prop="code" label="客户编码" width="150" />
-        <el-table-column prop="contact" label="联系人" width="120" />
-        <el-table-column prop="status" label="状态" width="100">
+    <PageCard title="客户列表" :subtitle="`共 ${customers.length} 个客户`">
+      <el-table :data="customers" stripe v-loading="loading" empty-text="暂无客户，请先新建客户">
+        <el-table-column label="客户" min-width="180">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'active' ? 'success' : 'info'">
+            <div class="customer-name">{{ row.name }}</div>
+            <div class="customer-code code-text">{{ row.code }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="contact" label="联系人" width="140">
+          <template #default="{ row }">
+            <span v-if="row.contact">{{ row.contact }}</span>
+            <span v-else class="muted">未填写</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'active' ? 'success' : 'info'" effect="light">
               {{ row.status === 'active' ? '正常' : '停用' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180">
+        <el-table-column prop="created_at" label="创建时间" width="160">
           <template #default="{ row }">
             {{ new Date(row.created_at).toLocaleDateString('zh-CN') }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="viewEnvs(row)">
-              <el-icon><Setting /></el-icon> 环境管理
-            </el-button>
-            <el-button size="small" @click="editCustomer(row)">编辑</el-button>
-            <el-popconfirm title="确认删除该客户?" @confirm="handleDelete(row.id)">
-              <template #reference>
-                <el-button size="small" type="danger">删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-space>
+              <el-button size="small" type="primary" plain @click="viewEnvs(row)">
+                <el-icon><Setting /></el-icon> 环境
+              </el-button>
+              <el-button size="small" @click="editCustomer(row)">编辑</el-button>
+              <el-popconfirm title="确认删除该客户?" @confirm="handleDelete(row.id)">
+                <template #reference>
+                  <el-button size="small" type="danger" plain>删除</el-button>
+                </template>
+              </el-popconfirm>
+            </el-space>
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </PageCard>
 
-    <!-- 新建/编辑客户对话框 -->
-    <el-dialog
-      :title="isEditing ? '编辑客户' : '新建客户'"
-      v-model="showCreateDialog"
-      width="500px"
-      @close="resetForm"
-    >
+    <el-dialog :title="isEditing ? '编辑客户' : '新建客户'" v-model="showCreateDialog" width="500px" @close="resetForm">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="客户名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入客户名称" />
@@ -72,6 +76,8 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import PageHeader from '../components/PageHeader.vue'
+import PageCard from '../components/PageCard.vue'
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../api'
 
 interface CustomerItem {
@@ -91,13 +97,7 @@ const isEditing = ref(false)
 const editingId = ref('')
 const submitting = ref(false)
 const formRef = ref()
-
-const form = ref({
-  name: '',
-  code: '',
-  contact: '',
-})
-
+const form = ref({ name: '', code: '', contact: '' })
 const rules = {
   name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
   code: [{ required: true, message: '请输入客户编码', trigger: 'blur' }],
@@ -118,7 +118,6 @@ const fetchCustomers = async () => {
 const handleSubmit = async () => {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
-
   submitting.value = true
   try {
     if (isEditing.value) {
@@ -137,7 +136,7 @@ const handleSubmit = async () => {
   }
 }
 
-const editCustomer = (row: any) => {
+const editCustomer = (row: CustomerItem) => {
   isEditing.value = true
   editingId.value = row.id
   form.value = { name: row.name, code: row.code, contact: row.contact || '' }
@@ -154,10 +153,7 @@ const handleDelete = async (id: string) => {
   }
 }
 
-const viewEnvs = (row: any) => {
-  router.push(`/customers/${row.id}/envs`)
-}
-
+const viewEnvs = (row: CustomerItem) => router.push(`/customers/${row.id}/envs`)
 const resetForm = () => {
   isEditing.value = false
   editingId.value = ''
@@ -167,3 +163,9 @@ const resetForm = () => {
 
 onMounted(fetchCustomers)
 </script>
+
+<style scoped>
+.customers-page { max-width: 1320px; margin: 0 auto; }
+.customer-name { font-weight: 650; color: var(--itcfg-text-primary); }
+.customer-code { margin-top: 4px; color: var(--itcfg-text-secondary); font-size: 12px; }
+</style>

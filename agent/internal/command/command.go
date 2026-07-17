@@ -2,8 +2,6 @@ package command
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"itcfg/agent/internal/config"
@@ -44,6 +42,7 @@ func NewRootCommand(version, buildTime, gitCommit string) *cobra.Command {
 	rootCmd.AddCommand(newValidateCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newRollbackCmd())
+	rootCmd.AddCommand(newInstallCmd())
 	rootCmd.AddCommand(newVersionCmd())
 
 	return rootCmd
@@ -83,7 +82,7 @@ func newImportCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Println("组件列表:")
 			for _, comp := range meta.Components {
-				fmt.Printf("  - %s (v%s)\n", comp.Name, comp.Version)
+				fmt.Printf("  - %s (%s)\n", comp.Name, comp.Image)
 			}
 			fmt.Println()
 			fmt.Println("导入完成，执行 'config-agent deploy' 开始部署")
@@ -194,14 +193,14 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "查看部署状态",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			metaPath := deploy.GetMetadataPath(configDir)
-			if _, err := os.Stat(metaPath); os.IsNotExist(err) {
+			state, err := deploy.LoadState(configDir)
+			if err != nil || state.CurrentPackage == "" {
 				fmt.Println("状态: 未部署")
-				fmt.Println("未找到部署包元信息，请先执行 'config-agent import'")
+				fmt.Println("未找到部署状态，请先执行 'config-agent import'")
 				return nil
 			}
 
-			meta, err := deploy.LoadMetadata(metaPath)
+			meta, err := deploy.LoadMetadata(deploy.GetMetadataPath(state.CurrentPackage))
 			if err != nil {
 				return fmt.Errorf("读取部署状态失败: %w", err)
 			}
@@ -209,11 +208,18 @@ func newStatusCmd() *cobra.Command {
 			fmt.Println("==========================================")
 			fmt.Println("  部署状态")
 			fmt.Println("==========================================")
+			fmt.Printf("  状态: %s\n", state.Status)
 			fmt.Printf("  客户: %s\n", meta.Customer)
 			fmt.Printf("  环境: %s\n", meta.Env)
-			fmt.Printf("  版本: %s\n", meta.Version)
-			fmt.Printf("  部署时间: %s\n", meta.CreatedAt)
+			fmt.Printf("  当前版本: %s\n", state.CurrentVersion)
+			if state.PreviousVersion != "" {
+				fmt.Printf("  上一版本: %s\n", state.PreviousVersion)
+			}
+			if state.Error != "" {
+				fmt.Printf("  错误: %s\n", state.Error)
+			}
 			fmt.Println("==========================================")
+			_ = deploy.ComposePS(configDir)
 			return nil
 		},
 	}
@@ -345,9 +351,9 @@ func newPullCmd() *cobra.Command {
 // newOnlineCmd 在线一键部署命令
 func newOnlineCmd() *cobra.Command {
 	var (
-		serverURL   string
-		envKey      string
-		versionTag  string
+		serverURL  string
+		envKey     string
+		versionTag string
 	)
 
 	cmd := &cobra.Command{
@@ -445,66 +451,21 @@ func newRollbackCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rollback",
 		Short: "回滚到上一版本",
-		Long:  "停止当前服务，恢复到上一个部署版本",
+		Long:  "停止当前版本服务，启动上一版本部署包",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Println("==========================================")
 			fmt.Println("  ITCFG Config Agent - 版本回滚")
 			fmt.Println("==========================================")
 
-			backupDir := configDir + "/backup"
-			configsDir := configDir + "/configs"
-			metaPath := deploy.GetMetadataPath(configDir)
-			dockerComposeFile := configDir + "/docker-compose.yml"
-
-			if _, err := os.Stat(backupDir); os.IsNotExist(err) {
-				return fmt.Errorf("没有可回滚的备份，请确保在部署前已备份")
+			deployer := deploy.NewDeployer(configDir, dryRun, verbose)
+			if err := deployer.Rollback(); err != nil {
+				return fmt.Errorf("回滚失败: %w", err)
 			}
-
-			if dryRun {
-				fmt.Println("[DRY-RUN] 以下操作将被执行:")
-				fmt.Printf("  1. 停止当前服务: docker-compose -f %s down\n", dockerComposeFile)
-				fmt.Printf("  2. 恢复备份: %s → %s\n", backupDir, configsDir)
-				fmt.Printf("  3. 启动服务: docker-compose -f %s up -d\n", dockerComposeFile)
-				return nil
-			}
-
-			// Step 1: 停止当前服务
-			fmt.Println("[1/3] 停止当前服务...")
-			deployer := deploy.NewDeployer(configDir, false, verbose)
-			if err := deployer.StopServices(); err != nil {
-				fmt.Printf("  ⚠ 停止服务时出现问题: %v\n", err)
-			} else {
-				fmt.Println("  ✓ 服务已停止")
-			}
-
-			// Step 2: 恢复备份
-			fmt.Println("[2/3] 恢复备份配置...")
-			if err := os.RemoveAll(configsDir); err != nil {
-				return fmt.Errorf("清除当前配置失败: %w", err)
-			}
-			if err := copyDir(backupDir, configsDir); err != nil {
-				return fmt.Errorf("恢复备份失败: %w", err)
-			}
-			fmt.Println("  ✓ 备份已恢复")
-
-			// Step 3: 重新启动服务
-			fmt.Println("[3/3] 重新启动服务...")
-			if err := deployer.StartServices(); err != nil {
-				return fmt.Errorf("启动服务失败: %w", err)
-			}
-			fmt.Println("  ✓ 服务已重新启动")
 
 			fmt.Println()
 			fmt.Println("==========================================")
 			fmt.Println("  回滚完成！")
 			fmt.Println("==========================================")
-
-			// 更新 metadata
-			if meta, err := deploy.LoadMetadata(metaPath); err == nil {
-				meta.CreatedAt = time.Now().Format(time.RFC3339)
-				fmt.Printf("  版本已回滚: %s\n", meta.Version)
-			}
-
 			return nil
 		},
 	}
@@ -512,21 +473,43 @@ func newRollbackCmd() *cobra.Command {
 	return cmd
 }
 
-// copyDir 递归复制目录
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, _ := filepath.Rel(src, path)
-		target := filepath.Join(dst, relPath)
-		if info.IsDir() {
-			return os.MkdirAll(target, 0755)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0644)
-	})
+func newInstallCmd() *cobra.Command {
+	var packagePath string
+	cmd := &cobra.Command{
+		Use:   "install",
+		Short: "一条命令导入并部署离线包",
+		Long:  "等价于 import → validate --package → deploy → status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if packagePath == "" {
+				return fmt.Errorf("请指定部署包路径: --package")
+			}
+			fmt.Println("==========================================")
+			fmt.Println("  ITCFG Config Agent - 一键安装")
+			fmt.Println("==========================================")
+
+			importer := deploy.NewImporter(configDir, verbose)
+			meta, err := importer.Import(packagePath)
+			if err != nil {
+				return fmt.Errorf("导入失败: %w", err)
+			}
+			fmt.Printf("  ✓ 已导入版本: %s\n", meta.Version)
+
+			validator := validate.NewValidator(configDir, verbose)
+			if err := validator.CheckPackage(); err != nil {
+				return fmt.Errorf("部署包校验失败: %w", err)
+			}
+			fmt.Println("  ✓ 部署包校验通过")
+
+			deployer := deploy.NewDeployer(configDir, dryRun, verbose)
+			if err := deployer.Deploy(); err != nil {
+				return fmt.Errorf("部署失败: %w", err)
+			}
+			fmt.Println("  ✓ 部署完成")
+			_ = deploy.ComposePS(configDir)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&packagePath, "package", "", "部署包路径 (tar.gz)")
+	cmd.MarkFlagRequired("package")
+	return cmd
 }

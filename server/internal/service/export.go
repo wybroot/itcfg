@@ -9,8 +9,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
+	"itcfg/server/internal/model"
 	"itcfg/server/internal/template"
 
 	"github.com/google/uuid"
@@ -18,29 +21,69 @@ import (
 
 // PackageExporter 部署包导出服务
 type PackageExporter struct {
-	configSvc      *ConfigService
-	componentSvc   *ComponentService
-	envSvc         *EnvService
-	customerSvc    *CustomerService
-	templateEngine *template.Engine
-	outputDir      string
+	configSvc       *ConfigService
+	componentSvc    *ComponentService
+	envSvc          *EnvService
+	customerSvc     *CustomerService
+	envComponentSvc *EnvironmentComponentService
+	artifactSvc     *ArtifactVersionService
+	deployRecordSvc *DeployRecordService
+	templateEngine  *template.Engine
+	outputDir       string
 }
 
 // PackageMetadata 部署包元信息
 type PackageMetadata struct {
-	Customer    string              `json:"customer"`
-	Env         string              `json:"env"`
-	Version     string              `json:"version"`
-	CreatedAt   string              `json:"created_at"`
-	CreatedBy   string              `json:"created_by"`
-	Checksum    string              `json:"checksum"`
-	Components  []PackageComponent  `json:"components"`
+	Customer   string             `json:"customer"`
+	Env        string             `json:"env"`
+	Version    string             `json:"version"`
+	CreatedAt  string             `json:"created_at"`
+	CreatedBy  string             `json:"created_by"`
+	Checksum   string             `json:"checksum"`
+	Components []PackageComponent `json:"components"`
 }
 
 // PackageComponent 部署包组件信息
 type PackageComponent struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name            string `json:"name"`
+	DisplayName     string `json:"display_name"`
+	TemplateDir     string `json:"template_dir"`
+	ArtifactType    string `json:"artifact_type"`
+	ArtifactName    string `json:"artifact_name"`
+	ArtifactVersion string `json:"artifact_version"`
+	Image           string `json:"image"`
+	ImageTar        string `json:"image_tar,omitempty"`
+}
+
+type packageManifest struct {
+	Version    string                  `json:"version"`
+	Customer   string                  `json:"customer"`
+	Env        string                  `json:"env"`
+	CreatedAt  string                  `json:"created_at"`
+	Components []packageManifestComp   `json:"components"`
+	Files      []packageManifestConfig `json:"files"`
+	Images     []packageManifestImage  `json:"images"`
+}
+
+type packageManifestComp struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	TemplateDir string `json:"template_dir"`
+	DeployOrder int    `json:"deploy_order"`
+}
+
+type packageManifestConfig struct {
+	Component string `json:"component"`
+	Path      string `json:"path"`
+	Target    string `json:"target"`
+	Owner     string `json:"owner"`
+	Mode      string `json:"mode"`
+}
+
+type packageManifestImage struct {
+	Component string `json:"component"`
+	Image     string `json:"image"`
+	Tar       string `json:"tar,omitempty"`
 }
 
 // NewPackageExporter 创建导出服务
@@ -49,163 +92,325 @@ func NewPackageExporter(
 	componentSvc *ComponentService,
 	envSvc *EnvService,
 	customerSvc *CustomerService,
+	envComponentSvc *EnvironmentComponentService,
+	artifactSvc *ArtifactVersionService,
+	deployRecordSvc *DeployRecordService,
 	templateEngine *template.Engine,
 	outputDir string,
 ) *PackageExporter {
 	return &PackageExporter{
-		configSvc:      configSvc,
-		componentSvc:   componentSvc,
-		envSvc:         envSvc,
-		customerSvc:    customerSvc,
-		templateEngine: templateEngine,
-		outputDir:      outputDir,
+		configSvc:       configSvc,
+		componentSvc:    componentSvc,
+		envSvc:          envSvc,
+		customerSvc:     customerSvc,
+		envComponentSvc: envComponentSvc,
+		artifactSvc:     artifactSvc,
+		deployRecordSvc: deployRecordSvc,
+		templateEngine:  templateEngine,
+		outputDir:       outputDir,
 	}
 }
 
 // Export 导出完整部署包
 func (e *PackageExporter) Export(envID string, createdBy string) (string, *PackageMetadata, error) {
-	// 1. 获取环境信息
-	env, err := e.envSvc.repo.GetByID(envID)
+	env, err := e.envSvc.GetByID(envID)
 	if err != nil {
 		return "", nil, fmt.Errorf("获取环境信息失败: %w", err)
 	}
 
-	// 2. 获取客户信息
 	customer, err := e.customerSvc.GetByID(env.CustomerID.String())
 	if err != nil {
 		return "", nil, fmt.Errorf("获取客户信息失败: %w", err)
 	}
 
-	// 3. 获取所有组件
-	components, err := e.componentSvc.List()
+	envComponents, err := e.envComponentSvc.ListByEnv(envID)
 	if err != nil {
-		return "", nil, fmt.Errorf("获取组件列表失败: %w", err)
+		return "", nil, fmt.Errorf("获取环境组件失败: %w", err)
+	}
+	if len(envComponents) == 0 {
+		return "", nil, fmt.Errorf("当前环境未启用任何组件")
 	}
 
-	// 4. 获取所有配置值（导出使用解密版本）
 	configs, err := e.configSvc.GetByEnvDecrypted(envID)
 	if err != nil {
 		return "", nil, fmt.Errorf("获取配置值失败: %w", err)
 	}
-
-	// 构建变量ID到值的映射
-	configMap := make(map[string]string)
+	configMap := make(map[string]string, len(configs))
 	for _, cfg := range configs {
 		configMap[cfg.VariableID.String()] = cfg.VarValue
 	}
 
-	// 5. 生成版本号
-	version := fmt.Sprintf("v%s", time.Now().Format("20060102-150405"))
+	artifacts, err := e.artifactSvc.ListByEnv(envID)
+	if err != nil {
+		return "", nil, fmt.Errorf("获取制品版本失败: %w", err)
+	}
+	artifactMap := make(map[string]model.ComponentArtifactVersion, len(artifacts))
+	for _, artifact := range artifacts {
+		artifactMap[artifact.ComponentID.String()] = artifact
+	}
 
-	// 6. 创建临时工作目录
+	version := fmt.Sprintf("v%s", time.Now().Format("20060102-150405"))
 	workDir := filepath.Join(e.outputDir, fmt.Sprintf("export-%s", uuid.New().String()))
 	defer os.RemoveAll(workDir)
 
-	configsDir := filepath.Join(workDir, "configs")
-	if err := os.MkdirAll(configsDir, 0755); err != nil {
-		return "", nil, fmt.Errorf("创建临时目录失败: %w", err)
+	for _, dir := range []string{"configs", "images", "scripts"} {
+		if err := os.MkdirAll(filepath.Join(workDir, dir), 0755); err != nil {
+			return "", nil, fmt.Errorf("创建临时目录失败: %w", err)
+		}
 	}
 
-	// 7. 渲染每个组件的配置文件
+	createdAt := time.Now().Format(time.RFC3339)
 	meta := &PackageMetadata{
 		Customer:   customer.Name,
 		Env:        env.EnvName,
 		Version:    version,
-		CreatedAt:  time.Now().Format(time.RFC3339),
+		CreatedAt:  createdAt,
 		CreatedBy:  createdBy,
 		Components: []PackageComponent{},
 	}
+	manifest := packageManifest{
+		Version:    version,
+		Customer:   customer.Name,
+		Env:        env.EnvName,
+		CreatedAt:  createdAt,
+		Components: []packageManifestComp{},
+		Files:      []packageManifestConfig{},
+		Images:     []packageManifestImage{},
+	}
 
-	for _, comp := range components {
-		if !comp.IsActive {
-			continue
+	composeImages := map[string]string{}
+	configSnapshot := map[string]string{}
+	artifactSnapshot := map[string]string{}
+
+	for _, envComponent := range envComponents {
+		comp := envComponent.Component
+		templateDir := comp.TemplateDir
+		if templateDir == "" {
+			templateDir = comp.Name
 		}
 
-		// 获取组件变量定义
-		variables, err := e.templateEngine.LoadVariables(comp.Name)
+		artifact, ok := artifactMap[comp.ID.String()]
+		if !ok {
+			return "", nil, fmt.Errorf("组件 %s 缺少制品版本", comp.DisplayName)
+		}
+		image := artifact.RegistryURL
+		if image == "" {
+			image = fmt.Sprintf("%s:%s", artifact.ArtifactName, artifact.ArtifactVersion)
+		}
+		composeImages[templateDir] = image
+		artifactSnapshot[comp.Name] = image
+
+		manifestDef, err := e.templateEngine.LoadManifest(templateDir)
 		if err != nil {
-			// 跳过没有模板的组件
-			continue
+			return "", nil, fmt.Errorf("读取组件模板 %s 失败: %w", templateDir, err)
+		}
+		variables, err := e.templateEngine.LoadVariables(templateDir)
+		if err != nil {
+			return "", nil, fmt.Errorf("读取组件变量 %s 失败: %w", templateDir, err)
 		}
 
-		// 构建渲染值
-		renderValues := make(map[string]string)
-		for _, v := range variables.Variables {
-			// 通过变量ID在configMap中查找值
-			// 需要找到对应变量的ID
-			for _, varModel := range comp.Variables {
-				if varModel.VarName == v.Name {
-					if val, ok := configMap[varModel.ID.String()]; ok && val != "" {
-						renderValues[v.Name] = val
-					} else {
-						renderValues[v.Name] = v.Default
+		renderValues := make(map[string]string, len(variables.Variables))
+		for _, variable := range variables.Variables {
+			value := variable.Default
+			for _, dbVar := range comp.Variables {
+				if dbVar.VarName == variable.Name {
+					if configured, ok := configMap[dbVar.ID.String()]; ok && configured != "" {
+						value = configured
 					}
+					configSnapshot[dbVar.VarName] = value
 					break
 				}
 			}
-			// fallback: 使用默认值
-			if _, ok := renderValues[v.Name]; !ok {
-				renderValues[v.Name] = v.Default
+			if variable.Required && strings.TrimSpace(value) == "" {
+				return "", nil, fmt.Errorf("组件 %s 缺少必填配置 %s", comp.DisplayName, variable.Label)
 			}
+			renderValues[variable.Name] = value
 		}
 
-		// 渲染所有模板文件
-		rendered, err := e.templateEngine.RenderAll(comp.Name, renderValues)
-		if err != nil {
-			continue // 跳过渲染失败的组件
-		}
-
-		// 写入配置文件
-		compConfigDir := filepath.Join(configsDir, comp.Name)
+		compConfigDir := filepath.Join(workDir, "configs", templateDir)
 		if err := os.MkdirAll(compConfigDir, 0755); err != nil {
-			continue
+			return "", nil, fmt.Errorf("创建组件配置目录失败: %w", err)
 		}
-
-		for path, content := range rendered {
-			// 生成输出路径
-			fileName := filepath.Base(path)
-			filePath := filepath.Join(compConfigDir, fileName)
-			// 确保子目录存在
-			if dir := filepath.Dir(filePath); dir != compConfigDir {
-				os.MkdirAll(dir, 0755)
+		for _, cfg := range manifestDef.ConfigFiles {
+			if !strings.HasSuffix(cfg.Path, ".tmpl") {
+				continue
+			}
+			content, err := e.templateEngine.RenderFile(templateDir, cfg.Path, renderValues)
+			if err != nil {
+				return "", nil, fmt.Errorf("渲染组件 %s 配置 %s 失败: %w", comp.DisplayName, cfg.Path, err)
+			}
+			cleanPath := filepath.Clean(strings.TrimSuffix(cfg.Path, ".tmpl"))
+			if strings.HasPrefix(cleanPath, "..") || filepath.IsAbs(cleanPath) {
+				return "", nil, fmt.Errorf("模板输出路径非法: %s", cfg.Path)
+			}
+			filePath := filepath.Join(compConfigDir, cleanPath)
+			if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+				return "", nil, fmt.Errorf("创建配置文件目录失败: %w", err)
 			}
 			if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 				return "", nil, fmt.Errorf("写入配置文件失败 %s: %w", filePath, err)
 			}
+			manifest.Files = append(manifest.Files, packageManifestConfig{
+				Component: templateDir,
+				Path:      filepath.ToSlash(filepath.Join("configs", templateDir, cleanPath)),
+				Target:    cfg.Target,
+				Owner:     cfg.Owner,
+				Mode:      cfg.Mode,
+			})
 		}
 
+		imageTar := copyImageTar(workDir, templateDir, artifact.RegistryURL)
 		meta.Components = append(meta.Components, PackageComponent{
-			Name:    comp.Name,
-			Version: comp.Name, // 后续可从制品版本表获取
+			Name:            comp.Name,
+			DisplayName:     comp.DisplayName,
+			TemplateDir:     templateDir,
+			ArtifactType:    artifact.ArtifactType,
+			ArtifactName:    artifact.ArtifactName,
+			ArtifactVersion: artifact.ArtifactVersion,
+			Image:           image,
+			ImageTar:        imageTar,
+		})
+		manifest.Components = append(manifest.Components, packageManifestComp{
+			Name:        comp.Name,
+			DisplayName: comp.DisplayName,
+			TemplateDir: templateDir,
+			DeployOrder: envComponent.DeployOrder,
+		})
+		manifest.Images = append(manifest.Images, packageManifestImage{
+			Component: templateDir,
+			Image:     image,
+			Tar:       imageTar,
 		})
 	}
 
-	// 8. 写入 metadata.json
-	metaPath := filepath.Join(workDir, "metadata.json")
-	metaData, _ := json.MarshalIndent(meta, "", "  ")
-	os.WriteFile(metaPath, metaData, 0644)
+	if err := os.WriteFile(filepath.Join(workDir, "docker-compose.yml"), []byte(generateCompose(composeImages)), 0644); err != nil {
+		return "", nil, fmt.Errorf("写入 docker-compose.yml 失败: %w", err)
+	}
+	if err := writeExecutable(filepath.Join(workDir, "scripts", "deploy.sh"), GenerateInstallScript()); err != nil {
+		return "", nil, err
+	}
+	if err := writeExecutable(filepath.Join(workDir, "scripts", "rollback.sh"), GenerateRollbackScript()); err != nil {
+		return "", nil, err
+	}
+	if err := writeExecutable(filepath.Join(workDir, "scripts", "healthcheck.sh"), GenerateHealthcheckScript()); err != nil {
+		return "", nil, err
+	}
 
-	// 9. 打包为 tar.gz
-	packageName := fmt.Sprintf("%s-%s-%s.tar.gz",
-		customer.Code, env.EnvKey, version)
+	if err := writeJSON(filepath.Join(workDir, "metadata.json"), meta); err != nil {
+		return "", nil, err
+	}
+	if err := writeJSON(filepath.Join(workDir, "manifest.json"), manifest); err != nil {
+		return "", nil, err
+	}
+	if err := writeChecksums(workDir); err != nil {
+		return "", nil, fmt.Errorf("生成 checksums.txt 失败: %w", err)
+	}
+
+	packageName := fmt.Sprintf("%s-%s-%s.tar.gz", customer.Code, env.EnvKey, version)
 	outputPath := filepath.Join(e.outputDir, packageName)
-
 	if err := e.createTarGz(workDir, outputPath); err != nil {
 		return "", nil, fmt.Errorf("打包失败: %w", err)
 	}
 
-	// 10. 计算校验和
 	checksum, err := e.calculateChecksum(outputPath)
 	if err != nil {
 		return "", nil, fmt.Errorf("计算校验和失败: %w", err)
 	}
 	meta.Checksum = checksum
 
-	// 更新 metadata
-	metaData, _ = json.MarshalIndent(meta, "", "  ")
-	os.WriteFile(metaPath, metaData, 0644)
+	configData, _ := json.Marshal(configSnapshot)
+	artifactData, _ := json.Marshal(artifactSnapshot)
+	_ = e.deployRecordSvc.Create(&model.DeployRecord{
+		CustomerEnvID:    uuid.MustParse(envID),
+		VersionTag:       version,
+		ConfigSnapshot:   string(configData),
+		ArtifactSnapshot: string(artifactData),
+		PackageChecksum:  checksum,
+		DeployedAt:       time.Now(),
+		DeployedBy:       createdBy,
+		Status:           "exported",
+		Notes:            "部署包已导出",
+	})
 
 	return outputPath, meta, nil
+}
+
+func copyImageTar(workDir, component, source string) string {
+	if source == "" {
+		return ""
+	}
+	info, err := os.Stat(source)
+	if err != nil || info.IsDir() {
+		return ""
+	}
+	fileName := fmt.Sprintf("%s.tar", component)
+	targetRel := filepath.ToSlash(filepath.Join("images", fileName))
+	targetPath := filepath.Join(workDir, "images", fileName)
+	in, err := os.Open(source)
+	if err != nil {
+		return ""
+	}
+	defer in.Close()
+	out, err := os.Create(targetPath)
+	if err != nil {
+		return ""
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return ""
+	}
+	return targetRel
+}
+
+func writeJSON(path string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func writeExecutable(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0755)
+}
+
+func writeChecksums(workDir string) error {
+	var lines []string
+	if err := filepath.Walk(workDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || filepath.Base(path) == "checksums.txt" {
+			return nil
+		}
+		rel, err := filepath.Rel(workDir, path)
+		if err != nil {
+			return err
+		}
+		checksum, err := fileSHA256(path)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s", checksum, filepath.ToSlash(rel)))
+		return nil
+	}); err != nil {
+		return err
+	}
+	sort.Strings(lines)
+	return os.WriteFile(filepath.Join(workDir, "checksums.txt"), []byte(strings.Join(lines, "\n")+"\n"), 0644)
+}
+
+func fileSHA256(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 // createTarGz 创建 tar.gz 压缩包
@@ -226,140 +431,190 @@ func (e *PackageExporter) createTarGz(sourceDir, targetFile string) error {
 		if err != nil {
 			return err
 		}
-
-		// 获取相对路径
 		relPath, err := filepath.Rel(sourceDir, path)
 		if err != nil {
 			return err
 		}
+		if relPath == "." {
+			return nil
+		}
 
-		// 创建 tar header
 		header, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return err
 		}
-		header.Name = relPath
+		header.Name = filepath.ToSlash(relPath)
 
-		// 写入 header
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
-
-		// 如果是文件，写入内容
-		if !info.IsDir() {
-			file, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-			if _, err := io.Copy(tw, file); err != nil {
-				return err
-			}
+		if info.IsDir() {
+			return nil
 		}
 
-		return nil
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		_, err = io.Copy(tw, file)
+		return err
 	})
 }
 
 // calculateChecksum 计算文件 SHA256 校验和
 func (e *PackageExporter) calculateChecksum(filePath string) (string, error) {
-	f, err := os.Open(filePath)
+	checksum, err := fileSHA256(filePath)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	return "sha256:" + checksum, nil
+}
 
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+func generateCompose(images map[string]string) string {
+	image := func(component, fallback string) string {
+		if value := images[component]; value != "" {
+			return value
+		}
+		return fallback
 	}
+	var b strings.Builder
+	b.WriteString("version: '3.8'\n\n")
+	b.WriteString("networks:\n  itcfg-network:\n    driver: bridge\n\n")
+	b.WriteString("services:\n")
+	if _, ok := images["postgresql"]; ok {
+		b.WriteString(fmt.Sprintf(`  postgresql:
+    image: %s
+    container_name: itcfg-postgresql
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ${DATA_BASE_DIR:-/data}/postgresql:/var/lib/postgresql/data
+      - ./configs/postgresql/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./configs/postgresql/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    networks:
+      - itcfg-network
+    environment:
+      - TZ=${TIMEZONE:-Asia/Shanghai}
+      - POSTGRES_DB=${POSTGRES_DB:-itcfg}
+      - POSTGRES_USER=${POSTGRES_USER:-itcfg}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-itcfg123}
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
 
-	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
+`, image("postgresql", "postgres:16-alpine")))
+	}
+	if _, ok := images["java-app"]; ok {
+		depends := ""
+		if _, hasPostgres := images["postgresql"]; hasPostgres {
+			depends = "    depends_on:\n      - postgresql\n"
+		}
+		b.WriteString(fmt.Sprintf(`  java-app:
+    image: %s
+    container_name: itcfg-java-app
+    restart: unless-stopped
+    ports:
+      - "${JAVA_APP_PORT:-8080}:8080"
+    volumes:
+      - ./configs/java-app:/opt/java-app/config:ro
+      - ${LOG_BASE_DIR:-/var/log}/java-app:/opt/java-app/logs
+%s    networks:
+      - itcfg-network
+    environment:
+      - TZ=${TIMEZONE:-Asia/Shanghai}
+      - JAVA_OPTS=${JAVA_OPTS:--Xms512m -Xmx1g}
+
+`, image("java-app", "java-app:latest"), depends))
+	}
+	if _, ok := images["nginx"]; ok {
+		depends := ""
+		if _, hasJava := images["java-app"]; hasJava {
+			depends = "    depends_on:\n      - java-app\n"
+		}
+		b.WriteString(fmt.Sprintf(`  nginx:
+    image: %s
+    container_name: itcfg-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ${DATA_BASE_DIR:-/data}/nginx/logs:/var/log/nginx
+%s    networks:
+      - itcfg-network
+    environment:
+      - TZ=${TIMEZONE:-Asia/Shanghai}
+
+`, image("nginx", "nginx:1.25-alpine"), depends))
+	}
+	return b.String()
 }
 
 // GenerateInstallScript 生成安装脚本
 func GenerateInstallScript() string {
 	return `#!/bin/bash
-set -e
+set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
 
-echo "=========================================="
-echo "  ITCFG 一键部署脚本"
-echo "=========================================="
+echo "[1/4] 校验部署包文件"
+sha256sum -c checksums.txt
 
-# 读取元信息
-if [ -f "$SCRIPT_DIR/metadata.json" ]; then
-    echo "客户: $(grep -o '"customer": *"[^"]*"' "$SCRIPT_DIR/metadata.json" | cut -d'"' -f4)"
-    echo "环境: $(grep -o '"env": *"[^"]*"' "$SCRIPT_DIR/metadata.json" | cut -d'"' -f4)"
-    echo "版本: $(grep -o '"version": *"[^"]*"' "$SCRIPT_DIR/metadata.json" | cut -d'"' -f4)"
-fi
-
-# 1. 导入 Docker 镜像
-if [ -d "$SCRIPT_DIR/images" ] && [ -f "$SCRIPT_DIR/images/image-list.txt" ]; then
-    echo "[1/5] 导入 Docker 镜像..."
-    while IFS= read -r image_file; do
-        [ -z "$image_file" ] && continue
-        echo "  加载: $image_file"
-        docker load < "$SCRIPT_DIR/images/$image_file"
-    done < "$SCRIPT_DIR/images/image-list.txt"
+echo "[2/4] 导入 Docker 镜像"
+if compgen -G "images/*.tar" > /dev/null; then
+  for image in images/*.tar; do
+    echo "  docker load -i $image"
+    docker load -i "$image"
+  done
 else
-    echo "[1/5] 跳过镜像导入 (无镜像目录)"
+  echo "  未发现本地镜像 tar，跳过导入"
 fi
 
-# 2. 写入配置文件
-echo "[2/5] 写入配置文件..."
-if [ -d "$SCRIPT_DIR/configs" ]; then
-    cp -r "$SCRIPT_DIR/configs"/* /opt/itcfg/configs/ 2>/dev/null || true
-    echo "  配置文件已写入 /opt/itcfg/configs/"
-fi
+echo "[3/4] 启动服务"
+docker compose -f docker-compose.yml up -d
 
-# 3. 校验环境
-echo "[3/5] 校验部署环境..."
-if command -v docker &> /dev/null; then
-    echo "  Docker: ✓"
-else
-    echo "  Docker: ✗ 未安装"
-    exit 1
-fi
+echo "[4/4] 查看服务状态"
+docker compose -f docker-compose.yml ps
+`
+}
 
-# 4. 启动服务
-echo "[4/5] 启动服务..."
-if [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
-    cd "$SCRIPT_DIR"
-    docker-compose -f docker-compose.yml up -d
-    echo "  服务已启动"
-else
-    echo "  未找到 docker-compose.yml，跳过"
-fi
+func GenerateRollbackScript() string {
+	return `#!/bin/bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+docker compose -f docker-compose.yml down
+echo "服务已停止，请使用上一版本部署包执行 scripts/deploy.sh 完成回滚"
+`
+}
 
-# 5. 等待服务就绪
-echo "[5/5] 等待服务就绪..."
-sleep 10
-
-echo "=========================================="
-echo "  部署完成！"
-echo "=========================================="
+func GenerateHealthcheckScript() string {
+	return `#!/bin/bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+docker compose -f docker-compose.yml ps
 `
 }
 
 // GenerateStartScript 生成启动脚本
 func GenerateStartScript() string {
 	return `#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SCRIPT_DIR"
-docker-compose -f docker-compose.yml up -d
-echo "所有服务已启动"
+docker compose -f docker-compose.yml up -d
 `
 }
 
 // GenerateStopScript 生成停止脚本
 func GenerateStopScript() string {
 	return `#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SCRIPT_DIR"
-docker-compose -f docker-compose.yml down
-echo "所有服务已停止"
+docker compose -f docker-compose.yml down
 `
 }
 
@@ -367,7 +622,7 @@ echo "所有服务已停止"
 func GenerateUninstallScript() string {
 	return `#!/bin/bash
 set -e
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "警告: 此操作将停止并删除所有服务容器和数据卷！"
@@ -377,7 +632,6 @@ if [ "$confirm" != "yes" ]; then
     exit 0
 fi
 
-docker-compose -f docker-compose.yml down -v
-echo "服务已卸载"
+docker compose -f docker-compose.yml down -v
 `
 }

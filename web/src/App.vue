@@ -1,82 +1,72 @@
 <template>
   <div id="app">
-    <!-- 登录页：纯全屏，无侧边栏/顶栏 -->
     <template v-if="isLoginPage">
       <router-view />
     </template>
 
-    <!-- 管理后台：侧边栏 + 顶栏 + 内容区 -->
-    <el-container v-else style="height: 100vh">
-      <el-aside width="220px" class="sidebar">
-        <div class="logo" @click="$router.push('/')">
-          <el-icon :size="22"><Setting /></el-icon>
-          <span class="logo-text">ITCFG 配置中台</span>
+    <el-container v-else class="app-shell">
+      <el-aside width="232px" class="sidebar">
+        <div class="brand" @click="$router.push('/')">
+          <div class="brand-icon">
+            <el-icon><Setting /></el-icon>
+          </div>
+          <div>
+            <div class="brand-title">ITCFG</div>
+            <div class="brand-subtitle">配置交付操作台</div>
+          </div>
         </div>
+
+        <div class="nav-section-title">工作台</div>
         <el-menu
           :default-active="activeMenu"
           router
           background-color="transparent"
-          text-color="#bfcbd9"
+          text-color="rgba(255,255,255,0.68)"
           active-text-color="#fff"
         >
-          <el-menu-item index="/">
-            <el-icon><HomeFilled /></el-icon>
-            <span>首页</span>
-          </el-menu-item>
-          <el-menu-item index="/customers">
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>客户管理</span>
-          </el-menu-item>
-          <el-menu-item index="/users">
-            <el-icon><UserFilled /></el-icon>
-            <span>用户管理</span>
-          </el-menu-item>
-          <el-menu-item index="/components">
-            <el-icon><Grid /></el-icon>
-            <span>组件管理</span>
-          </el-menu-item>
-          <el-menu-item index="/templates">
-            <el-icon><Document /></el-icon>
-            <span>模板管理</span>
-          </el-menu-item>
-          <el-menu-item index="/notify-configs">
-            <el-icon><Bell /></el-icon>
-            <span>通知配置</span>
+          <el-menu-item v-for="item in menuRoutes" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.meta.icon" /></el-icon>
+            <span>{{ item.meta.title }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
 
-      <el-container>
+      <el-container class="content-shell">
         <el-header class="topbar">
           <div class="topbar-left">
             <el-breadcrumb separator="/">
               <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
+              <el-breadcrumb-item v-if="parentTitle">{{ parentTitle }}</el-breadcrumb-item>
               <el-breadcrumb-item v-if="pageTitle !== '首页'">{{ pageTitle }}</el-breadcrumb-item>
             </el-breadcrumb>
+            <div class="topbar-title">{{ pageTitle }}</div>
           </div>
-          <div class="topbar-right">
-            <el-dropdown trigger="click">
-              <span class="user-dropdown">
-                <el-avatar :size="32" icon="UserFilled" />
+
+          <el-dropdown trigger="click">
+            <span class="user-dropdown">
+              <el-avatar :size="34" icon="UserFilled" class="user-avatar" />
+              <span class="user-meta">
                 <span class="user-name">{{ currentUser.nickname || currentUser.username || '管理员' }}</span>
-                <el-icon><ArrowDown /></el-icon>
+                <span class="user-role">{{ currentUser.role === 'admin' ? '管理员' : '用户' }}</span>
               </span>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item disabled>
-                    <div>
-                      <div style="font-weight:500">{{ currentUser.nickname || currentUser.username }}</div>
-                      <div style="font-size:12px;color:#909399">{{ currentUser.role === 'admin' ? '管理员' : '用户' }}</div>
-                    </div>
-                  </el-dropdown-item>
-                  <el-dropdown-item divided @click="handleLogout">
-                    <el-icon><SwitchButton /></el-icon> 退出登录
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </div>
+              <el-icon><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item disabled>
+                  <div>
+                    <div style="font-weight: 600">{{ currentUser.nickname || currentUser.username }}</div>
+                    <div style="font-size: 12px; color: #909399">{{ currentUser.role === 'admin' ? '管理员' : '用户' }}</div>
+                  </div>
+                </el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout">
+                  <el-icon><SwitchButton /></el-icon> 退出登录
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </el-header>
+
         <el-main class="main-content">
           <router-view />
         </el-main>
@@ -94,9 +84,15 @@ const route = useRoute()
 const router = useRouter()
 
 const isLoginPage = computed(() => route.path === '/login')
-const activeMenu = computed(() => route.path)
+const activeMenu = computed(() => (route.meta.activeMenu as string) || route.path)
+const pageTitle = computed(() => (route.meta.title as string) || 'ITCFG 配置中台')
+const parentTitle = computed(() => route.meta.parentTitle as string | undefined)
+const menuRoutes = computed(() =>
+  router.getRoutes()
+    .filter(r => r.meta.menu)
+    .sort((a, b) => a.path.localeCompare(b.path))
+)
 
-// 响应式用户信息：监听路由变化重新读取
 const currentUser = reactive({
   nickname: '',
   username: '',
@@ -123,81 +119,161 @@ const handleLogout = () => {
   removeUser()
   router.push('/login')
 }
-
-const pageTitle = computed(() => {
-  const titles: Record<string, string> = {
-    '/': '首页',
-    '/customers': '客户管理',
-    '/components': '组件管理',
-    '/templates': '模板管理',
-    '/users': '用户管理',
-    '/notify-configs': '通知配置',
-  }
-  if (titles[route.path]) return titles[route.path]
-  if (route.path.includes('/envs/') && route.path.endsWith('/configs')) return '配置管理'
-  if (route.path.includes('/envs/') && route.path.endsWith('/versions')) return '配置版本历史'
-  if (route.path.includes('/envs/') && route.path.endsWith('/artifacts')) return '制品版本管理'
-  if (route.path.includes('/envs/') && route.path.endsWith('/deploy-records')) return '部署记录'
-  if (route.path.includes('/customers/') && route.path.endsWith('/envs')) return '客户环境'
-  return 'ITCFG 配置中台'
-})
 </script>
 
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
-}
-#app { height: 100vh; }
-</style>
-
 <style scoped>
+.app-shell {
+  height: 100vh;
+  background: var(--itcfg-bg);
+}
+
 .sidebar {
-  background: linear-gradient(180deg, #1e3a5f 0%, #152238 100%);
+  position: relative;
   overflow-y: auto;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.28), transparent 28%),
+    linear-gradient(180deg, #0f172a 0%, #111827 52%, #0b1120 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
-.logo {
-  display: flex; align-items: center; gap: 10px;
-  padding: 18px 20px; cursor: pointer;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 20px 18px;
+  cursor: pointer;
 }
-.logo-text {
-  color: #fff; font-size: 17px; font-weight: 600; letter-spacing: 1px;
+
+.brand-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: #fff;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.35);
 }
-.sidebar .el-menu {
+
+.brand-title {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.brand-subtitle {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+}
+
+.nav-section-title {
+  padding: 14px 20px 8px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.sidebar :deep(.el-menu) {
   border-right: none;
+  padding: 0 10px;
 }
-.sidebar .el-menu-item {
-  margin: 4px 8px;
-  border-radius: 8px;
-  transition: all 0.2s;
+
+.sidebar :deep(.el-menu-item) {
+  height: 44px;
+  margin: 4px 0;
+  border-radius: 12px;
+  transition: all 0.2s ease;
 }
-.sidebar .el-menu-item:hover {
-  background-color: rgba(255,255,255,0.08) !important;
-}
-.sidebar .el-menu-item.is-active {
-  background-color: #409EFF !important;
+
+.sidebar :deep(.el-menu-item:hover) {
   color: #fff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.sidebar :deep(.el-menu-item.is-active) {
+  color: #fff !important;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(14, 165, 233, 0.85)) !important;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.28);
+}
+
+.content-shell {
+  min-width: 0;
 }
 
 .topbar {
-  background: #fff;
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid #ebeef5;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-  padding: 0 24px;
-  z-index: 10;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 28px;
+  background: rgba(255, 255, 255, 0.86);
+  border-bottom: 1px solid var(--itcfg-border);
+  backdrop-filter: blur(14px);
 }
+
+.topbar-left {
+  min-width: 0;
+}
+
+.topbar-title {
+  margin-top: 6px;
+  color: var(--itcfg-text-primary);
+  font-size: 20px;
+  font-weight: 700;
+}
+
 .user-dropdown {
-  display: flex; align-items: center; gap: 8px;
-  cursor: pointer; padding: 4px 8px;
-  border-radius: 6px; transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  transition: all 0.2s ease;
 }
-.user-dropdown:hover { background: #f5f7fa; }
-.user-name { font-size: 14px; color: #303133; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.user-dropdown:hover {
+  background: var(--itcfg-surface-soft);
+  border-color: var(--itcfg-border);
+}
+
+.user-avatar {
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.user-name {
+  max-width: 140px;
+  overflow: hidden;
+  color: var(--itcfg-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-role {
+  margin-top: 3px;
+  color: var(--itcfg-text-secondary);
+  font-size: 12px;
+}
 
 .main-content {
-  background-color: #f0f2f5;
   min-height: 0;
+  padding: 26px 28px 32px;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(37, 99, 235, 0.08), transparent 30%),
+    var(--itcfg-bg);
 }
 </style>

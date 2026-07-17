@@ -1,87 +1,126 @@
 package repository
 
 import (
+	"encoding/json"
 	"log"
 
 	"itcfg/server/internal/model"
+	ittemplate "itcfg/server/internal/template"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// SeedComponents 插入默认组件数据（仅当组件表为空时）
-func SeedComponents(db *gorm.DB) error {
-	var count int64
-	if err := db.Model(&model.Component{}).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
+var mvpTemplateDirs = []string{"postgresql", "java-app", "nginx"}
 
-	components := []model.Component{
-		{Name: "nginx",       DisplayName: "Nginx",          Category: "web-server",     Description: "高性能 Web 服务器和反向代理",                      TemplateDir: "nginx"},
-		{Name: "apache",      DisplayName: "Apache HTTPD",    Category: "web-server",     Description: "Apache HTTP 服务器",                              TemplateDir: "apache"},
-		{Name: "tomcat",      DisplayName: "Apache Tomcat",   Category: "application",    Description: "Java Web 应用服务器",                             TemplateDir: "tomcat"},
-		{Name: "springboot",  DisplayName: "Spring Boot",     Category: "application",    Description: "Spring Boot 微服务应用",                          TemplateDir: "springboot"},
-		{Name: "postgresql",  DisplayName: "PostgreSQL",      Category: "database",       Description: "关系型数据库",                                    TemplateDir: "postgresql"},
-		{Name: "mysql",       DisplayName: "MySQL",           Category: "database",       Description: "关系型数据库",                                    TemplateDir: "mysql"},
-		{Name: "redis",       DisplayName: "Redis",           Category: "cache",          Description: "高性能缓存数据库",                                TemplateDir: "redis"},
-		{Name: "rabbitmq",    DisplayName: "RabbitMQ",        Category: "message-queue",  Description: "消息队列中间件",                                  TemplateDir: "rabbitmq"},
-		{Name: "minio",       DisplayName: "MinIO",           Category: "object-storage", Description: "兼容 S3 的对象存储服务",                          TemplateDir: "minio"},
-		{Name: "nacos",       DisplayName: "Nacos",           Category: "coordination",   Description: "服务注册与配置中心",                              TemplateDir: "nacos"},
-		{Name: "elasticsearch", DisplayName: "Elasticsearch", Category: "search-engine",  Description: "分布式搜索引擎",                                  TemplateDir: "elasticsearch"},
-		{Name: "onlyoffice",  DisplayName: "OnlyOffice",      Category: "office",         Description: "在线办公文档协作套件",                             TemplateDir: "onlyoffice"},
-		{Name: "sftpgo",      DisplayName: "SFTPGo",          Category: "file-service",   Description: "SFTP/FTPS/WebDAV 文件服务",                      TemplateDir: "sftpgo"},
-	}
+// SeedComponents 从模板目录同步 MVP 组件与变量定义。
+func SeedComponents(db *gorm.DB, templateDir string) error {
+	engine := ittemplate.NewEngine(templateDir)
 
-	for i := range components {
-		if err := db.Create(&components[i]).Error; err != nil {
-			log.Printf("插入组件 %s 失败: %v", components[i].Name, err)
+	for _, dir := range mvpTemplateDirs {
+		manifest, err := engine.LoadManifest(dir)
+		if err != nil {
+			log.Printf("读取组件模板 %s 失败: %v", dir, err)
+			continue
+		}
+		variables, err := engine.LoadVariables(dir)
+		if err != nil {
+			log.Printf("读取组件变量 %s 失败: %v", dir, err)
 			continue
 		}
 
-		// 为每个组件添加默认变量
-		variables := getDefaultVariables(components[i].ID, components[i].Name)
-		for j := range variables {
-			if err := db.Create(&variables[j]).Error; err != nil {
-				log.Printf("插入变量 %s.%s 失败: %v", components[i].Name, variables[j].VarName, err)
+		component := model.Component{
+			Name:        manifest.Name,
+			DisplayName: manifest.DisplayName,
+			Description: manifest.Description,
+			Category:    manifest.Category,
+			TemplateDir: dir,
+			IsActive:    true,
+		}
+
+		var existing model.Component
+		if err := db.Where("name = ?", manifest.Name).First(&existing).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				if err := db.Create(&component).Error; err != nil {
+					log.Printf("插入组件 %s 失败: %v", manifest.Name, err)
+					continue
+				}
+			} else {
+				return err
+			}
+		} else {
+			existing.DisplayName = component.DisplayName
+			existing.Description = component.Description
+			existing.Category = component.Category
+			existing.TemplateDir = component.TemplateDir
+			existing.IsActive = true
+			if err := db.Save(&existing).Error; err != nil {
+				log.Printf("更新组件 %s 失败: %v", manifest.Name, err)
+				continue
+			}
+			component = existing
+		}
+
+		if err := db.Where("component_id = ?", component.ID).Delete(&model.ComponentVariable{}).Error; err != nil {
+			return err
+		}
+
+		for i, v := range variables.Variables {
+			varType := v.Type
+			if varType == "boolean" {
+				varType = "bool"
+			}
+			variable := model.ComponentVariable{
+				ComponentID:    component.ID,
+				VarName:        v.Name,
+				VarLabel:       v.Label,
+				VarType:        varType,
+				DefaultValue:   v.Default,
+				Required:       v.Required,
+				ValidationRule: marshalValidationRule(v.Min, v.Max, v.Regex),
+				VarGroup:       v.Group,
+				SortOrder:      i + 1,
+				Description:    v.Description,
+				Options:        marshalStringSlice(v.Options),
+				LinkedTo:       v.LinkedTo,
+			}
+			if err := db.Create(&variable).Error; err != nil {
+				log.Printf("插入变量 %s.%s 失败: %v", manifest.Name, v.Name, err)
 			}
 		}
 	}
 
-	log.Printf("已插入 %d 个默认组件", len(components))
+	log.Printf("MVP 组件模板同步完成: %v", mvpTemplateDirs)
 	return nil
 }
 
-func getDefaultVariables(componentID uuid.UUID, compName string) []model.ComponentVariable {
-	type varDef struct {
-		name, label, varType, defaultValue, description, varGroup string
-		required bool
-		sortOrder int
+func marshalStringSlice(values []string) string {
+	if len(values) == 0 {
+		return ""
 	}
+	data, err := json.Marshal(values)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
 
-	defaults := []varDef{
-		{name: "port",         label: "服务端口",   varType: "number", defaultValue: "8080",     description: "服务监听端口",           varGroup: "基础配置", required: true,  sortOrder: 1},
-		{name: "host",         label: "绑定地址",   varType: "string", defaultValue: "0.0.0.0", description: "服务绑定地址",           varGroup: "基础配置", required: true,  sortOrder: 2},
-		{name: "log_level",    label: "日志级别",   varType: "select", defaultValue: "info",    description: "日志输出级别",           varGroup: "日志配置", required: false, sortOrder: 3},
-		{name: "max_conn",     label: "最大连接数", varType: "number", defaultValue: "1000",    description: "最大并发连接数",         varGroup: "性能配置", required: false, sortOrder: 4},
-		{name: "timeout",      label: "超时时间",   varType: "number", defaultValue: "30",      description: "请求超时时间（秒）",      varGroup: "性能配置", required: false, sortOrder: 5},
+func marshalValidationRule(min, max int, regex string) string {
+	rule := map[string]any{}
+	if min != 0 {
+		rule["min"] = min
 	}
-
-	var variables []model.ComponentVariable
-	for i, d := range defaults {
-		variables = append(variables, model.ComponentVariable{
-			ComponentID:  componentID,
-			VarName:      d.name,
-			VarLabel:     d.label,
-			VarType:      d.varType,
-			DefaultValue: d.defaultValue,
-			Required:     d.required,
-			Description:  d.description,
-			VarGroup:     d.varGroup,
-			SortOrder:    i + 1,
-		})
+	if max != 0 {
+		rule["max"] = max
 	}
-	return variables
+	if regex != "" {
+		rule["regex"] = regex
+	}
+	if len(rule) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(rule)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }

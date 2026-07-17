@@ -21,6 +21,7 @@ import (
 type Handler struct {
 	customerSvc        *service.CustomerService
 	envSvc             *service.EnvService
+	envComponentSvc    *service.EnvironmentComponentService
 	componentSvc       *service.ComponentService
 	configSvc          *service.ConfigService
 	deployRecordSvc    *service.DeployRecordService
@@ -36,6 +37,7 @@ type Handler struct {
 func NewHandler(
 	customerSvc *service.CustomerService,
 	envSvc *service.EnvService,
+	envComponentSvc *service.EnvironmentComponentService,
 	componentSvc *service.ComponentService,
 	configSvc *service.ConfigService,
 	deployRecordSvc *service.DeployRecordService,
@@ -49,6 +51,7 @@ func NewHandler(
 	return &Handler{
 		customerSvc:        customerSvc,
 		envSvc:             envSvc,
+		envComponentSvc:    envComponentSvc,
 		componentSvc:       componentSvc,
 		configSvc:          configSvc,
 		deployRecordSvc:    deployRecordSvc,
@@ -100,6 +103,10 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
 		api.PUT("/customers/:id/envs/:envId", h.UpdateEnv)
 		api.DELETE("/customers/:id/envs/:envId", h.DeleteEnv)
 
+		// 环境组件选择
+		api.GET("/envs/:envId/components", h.ListEnvComponents)
+		api.PUT("/envs/:envId/components", h.ReplaceEnvComponents)
+
 		// 模板管理
 		api.GET("/templates", h.ListTemplates)
 
@@ -112,7 +119,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
 
 		// 配置管理
 		api.GET("/envs/:envId/configs", h.GetEnvConfigs)
-		api.PUT("/envs/:envId/configs/:componentId", h.UpdateEnvConfigs)
+		api.PUT("/envs/:envId/components/:componentId/configs", h.UpdateEnvConfigs)
 		api.POST("/envs/:envId/configs/preview", h.PreviewConfigs)
 		api.POST("/envs/:envId/export", h.ExportPackage)
 
@@ -172,11 +179,11 @@ func (h *Handler) GetDashboardStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"customers":     len(customers),
-			"components":    len(components),
-			"todayDeploys":  todayCount,
-			"totalDeploys":  len(deployRecords),
-			"successRate":   successRate,
+			"customers":    len(customers),
+			"components":   len(components),
+			"todayDeploys": todayCount,
+			"totalDeploys": len(deployRecords),
+			"successRate":  successRate,
 		},
 	})
 }
@@ -339,6 +346,70 @@ func (h *Handler) UpdateEnv(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": env})
 }
 
+// ==================== 环境组件 Handler ====================
+
+type EnvComponentRequest struct {
+	ComponentID string `json:"component_id" binding:"required"`
+	Enabled     *bool  `json:"enabled"`
+	DeployOrder int    `json:"deploy_order"`
+}
+
+type ReplaceEnvComponentsRequest struct {
+	Components []EnvComponentRequest `json:"components" binding:"required"`
+}
+
+func (h *Handler) ListEnvComponents(c *gin.Context) {
+	envID := c.Param("envId")
+	components, err := h.envComponentSvc.ListByEnv(envID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": components})
+}
+
+func (h *Handler) ReplaceEnvComponents(c *gin.Context) {
+	envID := c.Param("envId")
+	if _, err := h.envSvc.GetByID(envID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "环境不存在"})
+		return
+	}
+	var req ReplaceEnvComponentsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	components := make([]model.EnvironmentComponent, 0, len(req.Components))
+	for i, item := range req.Components {
+		componentID, err := uuid.Parse(item.ComponentID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的组件 ID"})
+			return
+		}
+		enabled := true
+		if item.Enabled != nil {
+			enabled = *item.Enabled
+		}
+		deployOrder := item.DeployOrder
+		if deployOrder == 0 {
+			deployOrder = i + 1
+		}
+		components = append(components, model.EnvironmentComponent{
+			CustomerEnvID: uuid.MustParse(envID),
+			ComponentID:   componentID,
+			Enabled:       enabled,
+			DeployOrder:   deployOrder,
+		})
+	}
+
+	if err := h.envComponentSvc.Replace(envID, components); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "环境组件已更新"})
+}
+
 // ==================== 模板 Handler ====================
 
 func (h *Handler) ListTemplates(c *gin.Context) {
@@ -468,10 +539,27 @@ type UpdateConfigRequest struct {
 
 func (h *Handler) UpdateEnvConfigs(c *gin.Context) {
 	envID := c.Param("envId")
+	componentID := c.Param("componentId")
+	component, err := h.componentSvc.GetByID(componentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "组件不存在"})
+		return
+	}
 	var req UpdateConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	allowed := make(map[string]bool, len(component.Variables))
+	for _, variable := range component.Variables {
+		allowed[variable.ID.String()] = true
+	}
+	for varID := range req.Values {
+		if !allowed[varID] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "配置项不属于当前组件"})
+			return
+		}
 	}
 
 	if err := h.configSvc.BatchUpsert(envID, req.Values, req.UpdatedBy); err != nil {
@@ -607,9 +695,9 @@ func (h *Handler) AgentAuth(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"env_id":     env.ID,
-			"env_name":   env.EnvName,
-			"customer_id": env.CustomerID,
+			"env_id":        env.ID,
+			"env_name":      env.EnvName,
+			"customer_id":   env.CustomerID,
 			"authenticated": true,
 		},
 	})
@@ -743,8 +831,8 @@ func (h *Handler) CloneEnv(c *gin.Context) {
 		req.Operator = "system"
 	}
 
-	// 完整克隆（配置 + 制品版本）
-	if err := service.CloneEnv(h.configSvc, h.artifactVersionSvc, req.FromEnvID, toEnvID, req.Operator); err != nil {
+	// 完整克隆（组件 + 配置 + 制品版本）
+	if err := service.CloneEnv(h.configSvc, h.artifactVersionSvc, h.envComponentSvc, req.FromEnvID, toEnvID, req.Operator); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("环境克隆失败: %v", err)})
 		return
 	}
@@ -898,9 +986,9 @@ func (h *Handler) AgentGetConfigs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"env_id":     env.ID,
-			"env_name":   env.EnvName,
-			"configs":    allConfigs,
+			"env_id":   env.ID,
+			"env_name": env.EnvName,
+			"configs":  allConfigs,
 		},
 	})
 }
