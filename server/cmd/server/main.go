@@ -80,13 +80,16 @@ func main() {
 	}
 	jwtManager := auth.NewJWTManager(jwtSecret, 24)
 
+	// 初始化模板引擎
+	templateEngine := template.NewEngine(templateDir)
+
 	// 初始化 Service
 	authSvc := auth.NewUserService(userRepo, jwtManager)
 	notifySvc := notify.NewService(notifyConfigRepo)
 	customerSvc := service.NewCustomerService(customerRepo)
 	envSvc := service.NewEnvService(envRepo)
 	envComponentSvc := service.NewEnvironmentComponentService(envComponentRepo)
-	componentSvc := service.NewComponentService(componentRepo)
+	componentSvc := service.NewComponentService(componentRepo, templateEngine)
 	// 加密密钥（敏感配置加密存储）
 	encryptionKey := os.Getenv("ENCRYPTION_KEY")
 
@@ -94,9 +97,6 @@ func main() {
 	deployRecordSvc := service.NewDeployRecordService(deployRecordRepo)
 	versionSvc := service.NewConfigVersionService(configVersionRepo, configValueRepo)
 	artifactVersionSvc := service.NewArtifactVersionService(artifactVersionRepo)
-
-	// 初始化模板引擎
-	templateEngine := template.NewEngine(templateDir)
 
 	// 初始化导出服务
 	exportDir := os.Getenv("EXPORT_DIR")

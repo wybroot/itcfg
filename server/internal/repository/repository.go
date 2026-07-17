@@ -224,6 +224,74 @@ func (r *ComponentRepo) Delete(id string) error {
 	return r.db.Delete(&model.Component{}, "id = ?", id).Error
 }
 
+func (r *ComponentRepo) ListVariables(componentID string) ([]model.ComponentVariable, error) {
+	var variables []model.ComponentVariable
+	err := r.db.Where("component_id = ?", componentID).Order("sort_order ASC, created_at ASC").Find(&variables).Error
+	return variables, err
+}
+
+func (r *ComponentRepo) GetVariable(componentID, variableID string) (*model.ComponentVariable, error) {
+	var variable model.ComponentVariable
+	err := r.db.Where("component_id = ? AND id = ?", componentID, variableID).First(&variable).Error
+	if err != nil {
+		return nil, err
+	}
+	return &variable, nil
+}
+
+func (r *ComponentRepo) CreateVariable(variable *model.ComponentVariable) error {
+	return r.db.Create(variable).Error
+}
+
+func (r *ComponentRepo) UpdateVariable(variable *model.ComponentVariable) error {
+	return r.db.Save(variable).Error
+}
+
+func (r *ComponentRepo) DeleteVariable(componentID, variableID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("variable_id = ?", variableID).Delete(&model.CustomerConfigValue{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("component_id = ? AND id = ?", componentID, variableID).Delete(&model.ComponentVariable{}).Error
+	})
+}
+
+func (r *ComponentRepo) UpsertVariablesByName(componentID string, variables []model.ComponentVariable, overwrite bool) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for i := range variables {
+			variables[i].ComponentID = uuid.MustParse(componentID)
+			var existing model.ComponentVariable
+			err := tx.Where("component_id = ? AND var_name = ?", componentID, variables[i].VarName).First(&existing).Error
+			if err == gorm.ErrRecordNotFound {
+				if err := tx.Create(&variables[i]).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if !overwrite {
+				continue
+			}
+			existing.VarLabel = variables[i].VarLabel
+			existing.VarType = variables[i].VarType
+			existing.DefaultValue = variables[i].DefaultValue
+			existing.Required = variables[i].Required
+			existing.ValidationRule = variables[i].ValidationRule
+			existing.VarGroup = variables[i].VarGroup
+			existing.SortOrder = variables[i].SortOrder
+			existing.Description = variables[i].Description
+			existing.Options = variables[i].Options
+			existing.LinkedTo = variables[i].LinkedTo
+			if err := tx.Save(&existing).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // GetAllVariables 获取所有组件的变量定义（返回 map[variableID]*ComponentVariable）
 func (r *ComponentRepo) GetAllVariables() (map[string]*model.ComponentVariable, error) {
 	var variables []model.ComponentVariable

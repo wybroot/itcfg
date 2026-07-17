@@ -8,6 +8,7 @@ import (
 	"itcfg/server/internal/crypto"
 	"itcfg/server/internal/model"
 	"itcfg/server/internal/repository"
+	ittemplate "itcfg/server/internal/template"
 	"itcfg/server/internal/validate"
 
 	"github.com/google/uuid"
@@ -98,11 +99,12 @@ func (s *EnvironmentComponentService) CloneComponents(fromEnvID, toEnvID string)
 
 // ComponentService 组件服务
 type ComponentService struct {
-	repo *repository.ComponentRepo
+	repo           *repository.ComponentRepo
+	templateEngine *ittemplate.Engine
 }
 
-func NewComponentService(repo *repository.ComponentRepo) *ComponentService {
-	return &ComponentService{repo: repo}
+func NewComponentService(repo *repository.ComponentRepo, templateEngine *ittemplate.Engine) *ComponentService {
+	return &ComponentService{repo: repo, templateEngine: templateEngine}
 }
 
 func (s *ComponentService) List() ([]model.Component, error) {
@@ -127,6 +129,169 @@ func (s *ComponentService) Update(component *model.Component) error {
 
 func (s *ComponentService) Delete(id string) error {
 	return s.repo.Delete(id)
+}
+
+func (s *ComponentService) ListVariables(componentID string) ([]model.ComponentVariable, error) {
+	return s.repo.ListVariables(componentID)
+}
+
+func (s *ComponentService) GetVariable(componentID, variableID string) (*model.ComponentVariable, error) {
+	return s.repo.GetVariable(componentID, variableID)
+}
+
+func (s *ComponentService) CreateVariable(componentID string, variable *model.ComponentVariable) error {
+	if _, err := s.GetByID(componentID); err != nil {
+		return err
+	}
+	variable.ComponentID = uuid.MustParse(componentID)
+	if variable.SortOrder == 0 {
+		variables, err := s.repo.ListVariables(componentID)
+		if err != nil {
+			return err
+		}
+		variable.SortOrder = len(variables) + 1
+	}
+	if err := normalizeAndValidateVariable(variable); err != nil {
+		return err
+	}
+	return s.repo.CreateVariable(variable)
+}
+
+func (s *ComponentService) UpdateVariable(componentID, variableID string, variable *model.ComponentVariable) error {
+	existing, err := s.repo.GetVariable(componentID, variableID)
+	if err != nil {
+		return err
+	}
+	existing.VarName = variable.VarName
+	existing.VarLabel = variable.VarLabel
+	existing.VarType = variable.VarType
+	existing.DefaultValue = variable.DefaultValue
+	existing.Required = variable.Required
+	existing.ValidationRule = variable.ValidationRule
+	existing.VarGroup = variable.VarGroup
+	existing.SortOrder = variable.SortOrder
+	existing.Description = variable.Description
+	existing.Options = variable.Options
+	existing.LinkedTo = variable.LinkedTo
+	if err := normalizeAndValidateVariable(existing); err != nil {
+		return err
+	}
+	return s.repo.UpdateVariable(existing)
+}
+
+func (s *ComponentService) DeleteVariable(componentID, variableID string) error {
+	return s.repo.DeleteVariable(componentID, variableID)
+}
+
+func (s *ComponentService) ImportVariablesFromTemplate(componentID string, overwrite bool) error {
+	component, err := s.GetByID(componentID)
+	if err != nil {
+		return err
+	}
+	if s.templateEngine == nil {
+		return fmt.Errorf("模板引擎未初始化")
+	}
+	templateDir := component.TemplateDir
+	if templateDir == "" {
+		templateDir = component.Name
+	}
+	variablesFile, err := s.templateEngine.LoadVariables(templateDir)
+	if err != nil {
+		return err
+	}
+	variables := make([]model.ComponentVariable, 0, len(variablesFile.Variables))
+	for i, v := range variablesFile.Variables {
+		variable := model.ComponentVariable{
+			VarName:        v.Name,
+			VarLabel:       v.Label,
+			VarType:        normalizeVarType(v.Type),
+			DefaultValue:   v.Default,
+			Required:       v.Required,
+			ValidationRule: marshalValidationRule(v.Min, v.Max, v.Regex),
+			VarGroup:       v.Group,
+			SortOrder:      i + 1,
+			Description:    v.Description,
+			Options:        marshalStringSlice(v.Options),
+			LinkedTo:       v.LinkedTo,
+		}
+		if err := normalizeAndValidateVariable(&variable); err != nil {
+			return err
+		}
+		variables = append(variables, variable)
+	}
+	return s.repo.UpsertVariablesByName(componentID, variables, overwrite)
+}
+
+func normalizeAndValidateVariable(variable *model.ComponentVariable) error {
+	variable.VarName = strings.TrimSpace(variable.VarName)
+	variable.VarLabel = strings.TrimSpace(variable.VarLabel)
+	variable.VarType = normalizeVarType(variable.VarType)
+	if variable.VarName == "" {
+		return fmt.Errorf("变量名不能为空")
+	}
+	if variable.VarLabel == "" {
+		return fmt.Errorf("变量标签不能为空")
+	}
+	switch variable.VarType {
+	case "string", "password", "number", "bool", "select":
+	default:
+		return fmt.Errorf("不支持的变量类型: %s", variable.VarType)
+	}
+	if strings.TrimSpace(variable.Options) != "" {
+		var options []string
+		if err := json.Unmarshal([]byte(variable.Options), &options); err != nil {
+			return fmt.Errorf("选项必须是 JSON 字符串数组")
+		}
+	}
+	if strings.TrimSpace(variable.ValidationRule) != "" {
+		var rule map[string]any
+		if err := json.Unmarshal([]byte(variable.ValidationRule), &rule); err != nil {
+			return fmt.Errorf("校验规则必须是 JSON 对象")
+		}
+	}
+	return nil
+}
+
+func normalizeVarType(varType string) string {
+	if varType == "" {
+		return "string"
+	}
+	if varType == "boolean" {
+		return "bool"
+	}
+	return varType
+}
+
+func marshalStringSlice(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(values)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func marshalValidationRule(min, max int, regex string) string {
+	rule := map[string]any{}
+	if min != 0 {
+		rule["min"] = min
+	}
+	if max != 0 {
+		rule["max"] = max
+	}
+	if regex != "" {
+		rule["regex"] = regex
+	}
+	if len(rule) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(rule)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // ConfigService 配置服务

@@ -124,6 +124,32 @@ export const deleteComponent = (id: string) => api.delete(`/components/${id}`)
 export const getComponentVariables = (componentId: string) =>
   api.get(`/components/${componentId}/variables`)
 
+export interface ComponentVariablePayload {
+  var_name: string
+  var_label: string
+  var_type?: string
+  default_value?: string
+  required?: boolean
+  validation_rule?: string
+  var_group?: string
+  sort_order?: number
+  description?: string
+  options?: string
+  linked_to?: string
+}
+
+export const createComponentVariable = (componentId: string, data: ComponentVariablePayload) =>
+  api.post(`/components/${componentId}/variables`, data)
+
+export const updateComponentVariable = (componentId: string, variableId: string, data: ComponentVariablePayload) =>
+  api.put(`/components/${componentId}/variables/${variableId}`, data)
+
+export const deleteComponentVariable = (componentId: string, variableId: string) =>
+  api.delete(`/components/${componentId}/variables/${variableId}`)
+
+export const importComponentVariables = (componentId: string, data: { overwrite?: boolean }) =>
+  api.post(`/components/${componentId}/variables/import-template`, data)
+
 export const getEnvComponents = (envId: string) => api.get(`/envs/${envId}/components`)
 
 export const replaceEnvComponents = (envId: string, data: {
@@ -137,8 +163,8 @@ export const getEnvConfigs = (envId: string) => api.get(`/envs/${envId}/configs`
 export const updateEnvConfigs = (envId: string, componentId: string, data: { values: Record<string, string>; updated_by?: string }) =>
   api.put(`/envs/${envId}/components/${componentId}/configs`, data)
 
-export const previewConfigs = (envId: string, componentName: string) =>
-  api.post(`/envs/${envId}/configs/preview`, { component_name: componentName })
+export const previewConfigs = (envId: string, componentId: string, componentName?: string) =>
+  api.post(`/envs/${envId}/configs/preview`, { component_id: componentId, component_name: componentName })
 
 export const exportPackage = (envId: string) =>
   axios.post(`/api/v1/envs/${envId}/export`, {}, { responseType: 'blob' })

@@ -40,7 +40,7 @@
           <el-tag effect="light" type="primary">{{ currentVariables.length }} 个变量</el-tag>
         </div>
 
-        <el-empty v-if="currentComponent && currentVariables.length === 0" description="该组件暂无可配置变量" />
+        <el-empty v-if="currentComponent && currentVariables.length === 0" description="该组件暂无变量，请到组件管理中新增变量或从模板导入变量" />
 
         <div v-else class="variable-groups">
           <section v-for="group in variableGroups" :key="group" class="variable-group">
@@ -215,7 +215,7 @@ const previewConfig = async () => {
   if (!comp) return
   previewLoading.value = true
   try {
-    const res: any = await previewConfigs(envId, comp.name)
+    const res: any = await previewConfigs(envId, comp.id, comp.name)
     previewData.value = res.data || {}
     previewTab.value = Object.keys(previewData.value)[0] || ''
     showPreview.value = true

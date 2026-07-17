@@ -60,20 +60,12 @@ func SeedComponents(db *gorm.DB, templateDir string) error {
 			component = existing
 		}
 
-		if err := db.Where("component_id = ?", component.ID).Delete(&model.ComponentVariable{}).Error; err != nil {
-			return err
-		}
-
 		for i, v := range variables.Variables {
-			varType := v.Type
-			if varType == "boolean" {
-				varType = "bool"
-			}
 			variable := model.ComponentVariable{
 				ComponentID:    component.ID,
 				VarName:        v.Name,
 				VarLabel:       v.Label,
-				VarType:        varType,
+				VarType:        normalizeTemplateVarType(v.Type),
 				DefaultValue:   v.Default,
 				Required:       v.Required,
 				ValidationRule: marshalValidationRule(v.Min, v.Max, v.Regex),
@@ -83,14 +75,43 @@ func SeedComponents(db *gorm.DB, templateDir string) error {
 				Options:        marshalStringSlice(v.Options),
 				LinkedTo:       v.LinkedTo,
 			}
-			if err := db.Create(&variable).Error; err != nil {
-				log.Printf("插入变量 %s.%s 失败: %v", manifest.Name, v.Name, err)
+
+			var existing model.ComponentVariable
+			err := db.Where("component_id = ? AND var_name = ?", component.ID, v.Name).First(&existing).Error
+			if err == gorm.ErrRecordNotFound {
+				if err := db.Create(&variable).Error; err != nil {
+					log.Printf("插入变量 %s.%s 失败: %v", manifest.Name, v.Name, err)
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			existing.VarLabel = variable.VarLabel
+			existing.VarType = variable.VarType
+			existing.DefaultValue = variable.DefaultValue
+			existing.Required = variable.Required
+			existing.ValidationRule = variable.ValidationRule
+			existing.VarGroup = variable.VarGroup
+			existing.SortOrder = variable.SortOrder
+			existing.Description = variable.Description
+			existing.Options = variable.Options
+			existing.LinkedTo = variable.LinkedTo
+			if err := db.Save(&existing).Error; err != nil {
+				log.Printf("更新变量 %s.%s 失败: %v", manifest.Name, v.Name, err)
 			}
 		}
 	}
 
 	log.Printf("MVP 组件模板同步完成: %v", mvpTemplateDirs)
 	return nil
+}
+
+func normalizeTemplateVarType(varType string) string {
+	if varType == "boolean" {
+		return "bool"
+	}
+	return varType
 }
 
 func marshalStringSlice(values []string) string {

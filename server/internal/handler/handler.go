@@ -116,6 +116,10 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
 		api.PUT("/components/:id", h.UpdateComponent)
 		api.DELETE("/components/:id", h.DeleteComponent)
 		api.GET("/components/:id/variables", h.GetComponentVariables)
+		api.POST("/components/:id/variables", h.CreateComponentVariable)
+		api.PUT("/components/:id/variables/:variableId", h.UpdateComponentVariable)
+		api.DELETE("/components/:id/variables/:variableId", h.DeleteComponentVariable)
+		api.POST("/components/:id/variables/import-template", h.ImportComponentVariables)
 
 		// 配置管理
 		api.GET("/envs/:envId/configs", h.GetEnvConfigs)
@@ -434,12 +438,100 @@ func (h *Handler) ListComponents(c *gin.Context) {
 
 func (h *Handler) GetComponentVariables(c *gin.Context) {
 	componentID := c.Param("id")
-	component, err := h.componentSvc.GetByID(componentID)
+	variables, err := h.componentSvc.ListVariables(componentID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "组件不存在"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": component.Variables})
+	c.JSON(http.StatusOK, gin.H{"data": variables})
+}
+
+type ComponentVariableRequest struct {
+	VarName        string `json:"var_name" binding:"required"`
+	VarLabel       string `json:"var_label" binding:"required"`
+	VarType        string `json:"var_type"`
+	DefaultValue   string `json:"default_value"`
+	Required       bool   `json:"required"`
+	ValidationRule string `json:"validation_rule"`
+	VarGroup       string `json:"var_group"`
+	SortOrder      int    `json:"sort_order"`
+	Description    string `json:"description"`
+	Options        string `json:"options"`
+	LinkedTo       string `json:"linked_to"`
+}
+
+func (req ComponentVariableRequest) toModel() *model.ComponentVariable {
+	return &model.ComponentVariable{
+		VarName:        req.VarName,
+		VarLabel:       req.VarLabel,
+		VarType:        req.VarType,
+		DefaultValue:   req.DefaultValue,
+		Required:       req.Required,
+		ValidationRule: req.ValidationRule,
+		VarGroup:       req.VarGroup,
+		SortOrder:      req.SortOrder,
+		Description:    req.Description,
+		Options:        req.Options,
+		LinkedTo:       req.LinkedTo,
+	}
+}
+
+func (h *Handler) CreateComponentVariable(c *gin.Context) {
+	componentID := c.Param("id")
+	var req ComponentVariableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	variable := req.toModel()
+	if err := h.componentSvc.CreateVariable(componentID, variable); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": variable})
+}
+
+func (h *Handler) UpdateComponentVariable(c *gin.Context) {
+	componentID := c.Param("id")
+	variableID := c.Param("variableId")
+	var req ComponentVariableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	variable := req.toModel()
+	if err := h.componentSvc.UpdateVariable(componentID, variableID, variable); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	updated, _ := h.componentSvc.GetVariable(componentID, variableID)
+	c.JSON(http.StatusOK, gin.H{"data": updated})
+}
+
+func (h *Handler) DeleteComponentVariable(c *gin.Context) {
+	componentID := c.Param("id")
+	variableID := c.Param("variableId")
+	if err := h.componentSvc.DeleteVariable(componentID, variableID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "变量已删除"})
+}
+
+type ImportComponentVariablesRequest struct {
+	Overwrite bool `json:"overwrite"`
+}
+
+func (h *Handler) ImportComponentVariables(c *gin.Context) {
+	componentID := c.Param("id")
+	var req ImportComponentVariablesRequest
+	_ = c.ShouldBindJSON(&req)
+	if err := h.componentSvc.ImportVariablesFromTemplate(componentID, req.Overwrite); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	variables, _ := h.componentSvc.ListVariables(componentID)
+	c.JSON(http.StatusOK, gin.H{"data": variables})
 }
 
 type CreateComponentRequest struct {
@@ -573,10 +665,17 @@ func (h *Handler) UpdateEnvConfigs(c *gin.Context) {
 func (h *Handler) PreviewConfigs(c *gin.Context) {
 	envID := c.Param("envId")
 	var req struct {
-		ComponentName string `json:"component_name" binding:"required"`
+		ComponentID   string `json:"component_id"`
+		ComponentName string `json:"component_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	component, err := h.findPreviewComponent(req.ComponentID, req.ComponentName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "组件不存在"})
 		return
 	}
 
@@ -587,20 +686,49 @@ func (h *Handler) PreviewConfigs(c *gin.Context) {
 		return
 	}
 
-	// 构建变量值 Map
-	values := make(map[string]string)
+	// 构建变量名 -> 配置值 Map，模板渲染使用变量名而不是变量 UUID
+	savedValues := make(map[string]string)
 	for _, cfg := range configs {
-		values[cfg.VariableID.String()] = cfg.VarValue
+		savedValues[cfg.VariableID.String()] = cfg.VarValue
+	}
+	renderValues := make(map[string]string)
+	for _, variable := range component.Variables {
+		value := variable.DefaultValue
+		if saved, ok := savedValues[variable.ID.String()]; ok && saved != "" {
+			value = saved
+		}
+		renderValues[variable.VarName] = value
+	}
+
+	templateDir := component.TemplateDir
+	if templateDir == "" {
+		templateDir = component.Name
 	}
 
 	// 渲染模板
-	rendered, err := h.templateEngine.RenderAll(req.ComponentName, values)
+	rendered, err := h.templateEngine.RenderAll(templateDir, renderValues)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": rendered})
+}
+
+func (h *Handler) findPreviewComponent(componentID, componentName string) (*model.Component, error) {
+	if componentID != "" {
+		return h.componentSvc.GetByID(componentID)
+	}
+	components, err := h.componentSvc.List()
+	if err != nil {
+		return nil, err
+	}
+	for i := range components {
+		if components[i].Name == componentName || components[i].TemplateDir == componentName {
+			return &components[i], nil
+		}
+	}
+	return nil, fmt.Errorf("component not found")
 }
 
 // ==================== 部署包导出 Handler ====================

@@ -68,8 +68,8 @@ type Component struct {
 // ComponentVariable 组件变量定义
 type ComponentVariable struct {
 	BaseModel
-	ComponentID    uuid.UUID `gorm:"type:uuid;not null;index" json:"component_id"`
-	VarName        string    `gorm:"type:varchar(64);not null" json:"var_name"`
+	ComponentID    uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_component_var_name" json:"component_id"`
+	VarName        string    `gorm:"type:varchar(64);not null;uniqueIndex:idx_component_var_name" json:"var_name"`
 	VarLabel       string    `gorm:"type:varchar(128);not null" json:"var_label"`
 	VarType        string    `gorm:"type:varchar(32);default:string" json:"var_type"`
 	DefaultValue   string    `gorm:"type:text" json:"default_value"`
