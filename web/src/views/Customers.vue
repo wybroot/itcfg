@@ -74,8 +74,17 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../api'
 
+interface CustomerItem {
+  id: string
+  name: string
+  code: string
+  contact: string
+  status: string
+  created_at: string
+}
+
 const router = useRouter()
-const customers = ref([])
+const customers = ref<CustomerItem[]>([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const isEditing = ref(false)

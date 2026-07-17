@@ -124,11 +124,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getEnvs, createEnv, deleteEnv, cloneEnv, exportPackage } from '../api'
 
+interface Env {
+  id: string
+  env_name: string
+  env_key: string
+  description?: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const customerId = route.params.id as string
 const customerName = ref('环境管理')
-const envs = ref([])
+const envs = ref<Env[]>([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const submitting = ref(false)
@@ -193,7 +200,7 @@ const handleDelete = async (envId: string) => {
   }
 }
 
-const viewConfigs = (env: any) => {
+const viewConfigs = (env: Env) => {
   router.push(`/envs/${env.id}/configs`)
 }
 
@@ -203,11 +210,11 @@ const copyEnvKey = (key: string) => {
 }
 
 const showCloneDialog = ref(false)
-const cloneTarget = ref<any>(null)
+const cloneTarget = ref<Env | null>(null)
 const cloneSource = ref('')
 const cloneLoading = ref(false)
 
-const openCloneDialog = (env: any) => {
+const openCloneDialog = (env: Env) => {
   cloneTarget.value = env
   cloneSource.value = ''
   showCloneDialog.value = true
@@ -233,7 +240,7 @@ const handleClone = async () => {
   }
 }
 
-const exportPkg = async (env: any) => {
+const exportPkg = async (env: Env) => {
   ElMessage.info('正在打包部署包，请稍候...')
   try {
     const res: any = await exportPackage(env.id)

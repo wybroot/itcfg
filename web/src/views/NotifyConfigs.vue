@@ -100,7 +100,16 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { getNotifyConfigs, createNotifyConfig, updateNotifyConfig, deleteNotifyConfig, testNotifyConfig } from '../api'
 
-const configs = ref([])
+interface NotifyConfigItem {
+  id: string
+  name: string
+  type: string
+  webhook_url: string
+  events: string
+  is_active: boolean
+}
+
+const configs = ref<NotifyConfigItem[]>([])
 const loading = ref(false)
 const showDialog = ref(false)
 const isEditing = ref(false)

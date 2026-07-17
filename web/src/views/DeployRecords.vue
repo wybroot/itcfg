@@ -49,9 +49,17 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getDeployRecords } from '../api'
 
+interface DeployRecordItem {
+  version_tag: string
+  status: string
+  deployed_by: string
+  notes: string
+  deployed_at: string
+}
+
 const route = useRoute()
 const envId = route.params.envId as string
-const records = ref([])
+const records = ref<DeployRecordItem[]>([])
 const loading = ref(false)
 
 const fetchRecords = async () => {

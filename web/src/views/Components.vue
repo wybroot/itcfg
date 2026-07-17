@@ -29,7 +29,15 @@
 import { ref, onMounted } from 'vue'
 import { getComponents } from '../api'
 
-const components = ref([])
+interface ComponentItem {
+  name: string
+  display_name: string
+  category: string
+  description: string
+  is_active: boolean
+}
+
+const components = ref<ComponentItem[]>([])
 const loading = ref(false)
 
 const getCategoryLabel = (category: string) => {

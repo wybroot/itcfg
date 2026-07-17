@@ -81,9 +81,16 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getVersions, createSnapshot, diffVersions, rollbackVersion } from '../api'
 
+interface VersionItem {
+  version: number
+  change_summary: string
+  created_by: string
+  created_at: string
+}
+
 const route = useRoute()
 const envId = route.params.envId as string
-const versions = ref([])
+const versions = ref<VersionItem[]>([])
 const loading = ref(false)
 const showDiff = ref(false)
 const diffFrom = ref(0)

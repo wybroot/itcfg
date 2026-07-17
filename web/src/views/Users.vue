@@ -98,7 +98,16 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { getUsers, createUser, updateUser, deleteUser } from '../api'
 
-const users = ref([])
+interface UserItem {
+  id: string
+  username: string
+  nickname: string
+  role: string
+  status: string
+  created_at: string
+}
+
+const users = ref<UserItem[]>([])
 const loading = ref(false)
 const showDialog = ref(false)
 const isEditing = ref(false)
