@@ -225,6 +225,10 @@ const handleClone = async () => {
     ElMessage.warning('请选择源环境')
     return
   }
+  if (!cloneTarget.value) {
+    ElMessage.warning('目标环境不存在')
+    return
+  }
   cloneLoading.value = true
   try {
     await cloneEnv(cloneTarget.value.id, {
