@@ -55,12 +55,20 @@ func (s *EnvService) ListByCustomer(customerID string) ([]model.CustomerEnv, err
 	return s.repo.ListByCustomer(customerID)
 }
 
+func (s *EnvService) GetByID(id string) (*model.CustomerEnv, error) {
+	return s.repo.GetByID(id)
+}
+
 func (s *EnvService) GetByKey(envKey string) (*model.CustomerEnv, error) {
 	return s.repo.GetByKey(envKey)
 }
 
 func (s *EnvService) Create(env *model.CustomerEnv) error {
 	return s.repo.Create(env)
+}
+
+func (s *EnvService) Update(env *model.CustomerEnv) error {
+	return s.repo.Update(env)
 }
 
 func (s *EnvService) Delete(id string) error {
@@ -86,6 +94,14 @@ func (s *ComponentService) GetByID(id string) (*model.Component, error) {
 
 func (s *ComponentService) Create(component *model.Component) error {
 	return s.repo.Create(component)
+}
+
+func (s *ComponentService) Update(component *model.Component) error {
+	return s.repo.Update(component)
+}
+
+func (s *ComponentService) Delete(id string) error {
+	return s.repo.Delete(id)
 }
 
 // ConfigService 配置服务

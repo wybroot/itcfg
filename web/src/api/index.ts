@@ -90,6 +90,9 @@ export const createEnv = (customerId: string, data: { env_name: string; env_key:
 export const deleteEnv = (customerId: string, envId: string) =>
   api.delete(`/customers/${customerId}/envs/${envId}`)
 
+export const updateEnv = (customerId: string, envId: string, data: { env_name?: string; env_key?: string; description?: string }) =>
+  api.put(`/customers/${customerId}/envs/${envId}`, data)
+
 // ==================== 模板 API ====================
 
 export const getTemplates = () => api.get('/templates')
@@ -97,6 +100,26 @@ export const getTemplates = () => api.get('/templates')
 // ==================== 组件 API ====================
 
 export const getComponents = () => api.get('/components')
+
+export const createComponent = (data: {
+  name: string
+  display_name: string
+  description?: string
+  category?: string
+  template_dir?: string
+  is_active?: boolean
+}) => api.post('/components', data)
+
+export const updateComponent = (id: string, data: {
+  name?: string
+  display_name?: string
+  description?: string
+  category?: string
+  template_dir?: string
+  is_active?: boolean
+}) => api.put(`/components/${id}`, data)
+
+export const deleteComponent = (id: string) => api.delete(`/components/${id}`)
 
 export const getComponentVariables = (componentId: string) =>
   api.get(`/components/${componentId}/variables`)

@@ -10,7 +10,7 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>环境列表</span>
-          <el-button type="primary" @click="showCreateDialog = true">
+          <el-button type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon> 新建环境
           </el-button>
         </div>
@@ -32,13 +32,16 @@
             {{ new Date(row.created_at).toLocaleDateString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="360" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="viewConfigs(row)">
               <el-icon><Edit /></el-icon> 配置管理
             </el-button>
             <el-button size="small" type="success" @click="exportPkg(row)">
               <el-icon><Download /></el-icon> 导出
+            </el-button>
+            <el-button size="small" @click="openEditDialog(row)">
+              <el-icon><Edit /></el-icon> 编辑
             </el-button>
             <el-button size="small" type="warning" @click="openCloneDialog(row)">
               <el-icon><CopyDocument /></el-icon> 克隆
@@ -53,9 +56,9 @@
       </el-table>
     </el-card>
 
-    <!-- 新建环境对话框 -->
+    <!-- 新建/编辑环境对话框 -->
     <el-dialog
-      title="新建环境"
+      :title="isEditing ? '编辑环境' : '新建环境'"
       v-model="showCreateDialog"
       width="500px"
       @close="resetForm"
@@ -122,13 +125,14 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getEnvs, createEnv, deleteEnv, cloneEnv, exportPackage } from '../api'
+import { getEnvs, createEnv, updateEnv, deleteEnv, cloneEnv, exportPackage } from '../api'
 
 interface Env {
   id: string
   env_name: string
   env_key: string
   description?: string
+  created_at?: string
 }
 
 const route = useRoute()
@@ -138,6 +142,8 @@ const customerName = ref('环境管理')
 const envs = ref<Env[]>([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
+const isEditing = ref(false)
+const editingId = ref('')
 const submitting = ref(false)
 const formRef = ref()
 
@@ -173,18 +179,41 @@ const fetchEnvs = async () => {
   }
 }
 
+const openCreateDialog = () => {
+  isEditing.value = false
+  editingId.value = ''
+  form.value = { env_name: '生产环境', env_key: '', description: '' }
+  showCreateDialog.value = true
+}
+
+const openEditDialog = (env: Env) => {
+  isEditing.value = true
+  editingId.value = env.id
+  form.value = {
+    env_name: env.env_name,
+    env_key: env.env_key,
+    description: env.description || '',
+  }
+  showCreateDialog.value = true
+}
+
 const handleSubmit = async () => {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
   submitting.value = true
   try {
-    await createEnv(customerId, form.value)
-    ElMessage.success('环境创建成功')
+    if (isEditing.value) {
+      await updateEnv(customerId, editingId.value, form.value)
+      ElMessage.success('环境更新成功')
+    } else {
+      await createEnv(customerId, form.value)
+      ElMessage.success('环境创建成功')
+    }
     showCreateDialog.value = false
     fetchEnvs()
   } catch {
-    ElMessage.error('创建失败')
+    ElMessage.error(isEditing.value ? '更新失败' : '创建失败')
   } finally {
     submitting.value = false
   }
@@ -264,6 +293,8 @@ const exportPkg = async (env: Env) => {
 }
 
 const resetForm = () => {
+  isEditing.value = false
+  editingId.value = ''
   form.value = { env_name: '生产环境', env_key: '', description: '' }
   formRef.value?.resetFields()
 }

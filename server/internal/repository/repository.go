@@ -118,6 +118,10 @@ func (r *EnvRepo) Create(env *model.CustomerEnv) error {
 	return r.db.Create(env).Error
 }
 
+func (r *EnvRepo) Update(env *model.CustomerEnv) error {
+	return r.db.Save(env).Error
+}
+
 func (r *EnvRepo) Delete(id string) error {
 	return r.db.Delete(&model.CustomerEnv{}, "id = ?", id).Error
 }
@@ -149,6 +153,14 @@ func (r *ComponentRepo) GetByID(id string) (*model.Component, error) {
 
 func (r *ComponentRepo) Create(component *model.Component) error {
 	return r.db.Create(component).Error
+}
+
+func (r *ComponentRepo) Update(component *model.Component) error {
+	return r.db.Save(component).Error
+}
+
+func (r *ComponentRepo) Delete(id string) error {
+	return r.db.Delete(&model.Component{}, "id = ?", id).Error
 }
 
 // GetAllVariables 获取所有组件的变量定义（返回 map[variableID]*ComponentVariable）

@@ -97,6 +97,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
 		// 环境管理
 		api.GET("/customers/:id/envs", h.ListEnvs)
 		api.POST("/customers/:id/envs", h.CreateEnv)
+		api.PUT("/customers/:id/envs/:envId", h.UpdateEnv)
 		api.DELETE("/customers/:id/envs/:envId", h.DeleteEnv)
 
 		// 模板管理
@@ -104,6 +105,9 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
 
 		// 组件管理
 		api.GET("/components", h.ListComponents)
+		api.POST("/components", h.CreateComponent)
+		api.PUT("/components/:id", h.UpdateComponent)
+		api.DELETE("/components/:id", h.DeleteComponent)
 		api.GET("/components/:id/variables", h.GetComponentVariables)
 
 		// 配置管理
@@ -301,6 +305,40 @@ func (h *Handler) DeleteEnv(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
+type UpdateEnvRequest struct {
+	EnvName     string `json:"env_name"`
+	EnvKey      string `json:"env_key"`
+	Description string `json:"description"`
+}
+
+func (h *Handler) UpdateEnv(c *gin.Context) {
+	envID := c.Param("envId")
+	env, err := h.envSvc.GetByID(envID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "环境不存在"})
+		return
+	}
+	var req UpdateEnvRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.EnvName != "" {
+		env.EnvName = req.EnvName
+	}
+	if req.EnvKey != "" {
+		env.EnvKey = req.EnvKey
+	}
+	if req.Description != "" {
+		env.Description = req.Description
+	}
+	if err := h.envSvc.Update(env); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": env})
+}
+
 // ==================== 模板 Handler ====================
 
 func (h *Handler) ListTemplates(c *gin.Context) {
@@ -331,6 +369,84 @@ func (h *Handler) GetComponentVariables(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": component.Variables})
+}
+
+type CreateComponentRequest struct {
+	Name        string `json:"name" binding:"required"`
+	DisplayName string `json:"display_name" binding:"required"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	TemplateDir string `json:"template_dir"`
+	IsActive    bool   `json:"is_active"`
+}
+
+func (h *Handler) CreateComponent(c *gin.Context) {
+	var req CreateComponentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.TemplateDir == "" {
+		req.TemplateDir = req.Name
+	}
+	comp := &model.Component{
+		Name:        req.Name,
+		DisplayName: req.DisplayName,
+		Description: req.Description,
+		Category:    req.Category,
+		TemplateDir: req.TemplateDir,
+		IsActive:    req.IsActive,
+	}
+	if err := h.componentSvc.Create(comp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": comp})
+}
+
+func (h *Handler) UpdateComponent(c *gin.Context) {
+	id := c.Param("id")
+	existing, err := h.componentSvc.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "组件不存在"})
+		return
+	}
+	var req CreateComponentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Name != "" {
+		existing.Name = req.Name
+	}
+	if req.DisplayName != "" {
+		existing.DisplayName = req.DisplayName
+	}
+	if req.Description != "" {
+		existing.Description = req.Description
+	}
+	if req.Category != "" {
+		existing.Category = req.Category
+	}
+	if req.TemplateDir != "" {
+		existing.TemplateDir = req.TemplateDir
+	}
+	existing.IsActive = req.IsActive
+
+	if err := h.componentSvc.Update(existing); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": existing})
+}
+
+func (h *Handler) DeleteComponent(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.componentSvc.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // ==================== 配置 Handler ====================

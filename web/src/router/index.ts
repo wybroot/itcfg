@@ -68,9 +68,16 @@ const router = createRouter({
   ],
 })
 
-// 路由守卫：未登录重定向到登录页
+// 路由守卫
 router.beforeEach((to, _from, next) => {
-  if (to.meta.public || isLoggedIn()) {
+  if (to.meta.public) {
+    // 已登录用户访问登录页，直接跳首页
+    if (to.path === '/login' && isLoggedIn()) {
+      next('/')
+    } else {
+      next()
+    }
+  } else if (isLoggedIn()) {
     next()
   } else {
     next('/login')
