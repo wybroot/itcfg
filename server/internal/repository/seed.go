@@ -3,6 +3,10 @@ package repository
 import (
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"itcfg/server/internal/model"
 	ittemplate "itcfg/server/internal/template"
@@ -10,13 +14,19 @@ import (
 	"gorm.io/gorm"
 )
 
-var mvpTemplateDirs = []string{"postgresql", "java-app", "nginx"}
-
-// SeedComponents 从模板目录同步 MVP 组件与变量定义。
+// SeedComponents 从模板目录同步组件与变量定义。
 func SeedComponents(db *gorm.DB, templateDir string) error {
 	engine := ittemplate.NewEngine(templateDir)
+	templateDirs, err := resolveSeedTemplateDirs(templateDir)
+	if err != nil {
+		return err
+	}
+	if len(templateDirs) == 0 {
+		log.Printf("组件模板同步已跳过")
+		return nil
+	}
 
-	for _, dir := range mvpTemplateDirs {
+	for _, dir := range templateDirs {
 		manifest, err := engine.LoadManifest(dir)
 		if err != nil {
 			log.Printf("读取组件模板 %s 失败: %v", dir, err)
@@ -103,8 +113,41 @@ func SeedComponents(db *gorm.DB, templateDir string) error {
 		}
 	}
 
-	log.Printf("MVP 组件模板同步完成: %v", mvpTemplateDirs)
+	log.Printf("组件模板同步完成: %v", templateDirs)
 	return nil
+}
+
+func resolveSeedTemplateDirs(templateDir string) ([]string, error) {
+	seedMode := strings.TrimSpace(os.Getenv("SEED_TEMPLATES"))
+	if seedMode == "" || seedMode == "all" {
+		entries, err := os.ReadDir(templateDir)
+		if err != nil {
+			return nil, err
+		}
+		dirs := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(templateDir, entry.Name(), "manifest.yaml")); err == nil {
+				dirs = append(dirs, entry.Name())
+			}
+		}
+		sort.Strings(dirs)
+		return dirs, nil
+	}
+	if seedMode == "none" {
+		return nil, nil
+	}
+	parts := strings.Split(seedMode, ",")
+	dirs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		dir := strings.TrimSpace(part)
+		if dir != "" {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs, nil
 }
 
 func normalizeTemplateVarType(varType string) string {

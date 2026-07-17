@@ -36,8 +36,12 @@
           <div>
             <div class="summary-title">{{ currentComponent.display_name }}</div>
             <div class="summary-subtitle code-text">{{ currentComponent.template_dir || currentComponent.name }}</div>
+            <div v-if="currentComponent.description" class="summary-desc">{{ currentComponent.description }}</div>
           </div>
-          <el-tag effect="light" type="primary">{{ currentVariables.length }} 个变量</el-tag>
+          <el-space wrap>
+            <el-tag effect="light" type="primary">{{ currentVariables.length }} 个变量</el-tag>
+            <el-tag effect="light" :type="requiredMissingCount ? 'warning' : 'success'">必填 {{ requiredFilledCount }}/{{ requiredVariables.length }}</el-tag>
+          </el-space>
         </div>
 
         <el-empty v-if="currentComponent && currentVariables.length === 0" description="该组件暂无变量，请到组件管理中新增变量或从模板导入变量" />
@@ -118,6 +122,16 @@ const previewLoading = ref(false)
 
 const currentComponent = computed(() => components.value.find(c => c.id === activeComponent.value))
 
+const requiredVariables = computed(() => currentVariables.value.filter(v => v.required))
+
+const isValueFilled = (value: unknown) => {
+  if (value === '***ENCRYPTED***') return true
+  return String(value ?? '').trim() !== ''
+}
+
+const requiredFilledCount = computed(() => requiredVariables.value.filter(v => isValueFilled(configValues.value[v.id])).length)
+const requiredMissingCount = computed(() => requiredVariables.value.length - requiredFilledCount.value)
+
 const variableGroups = computed(() => {
   const groups = new Set<string>()
   currentVariables.value.forEach(v => groups.add(v.var_group || '基础配置'))
@@ -193,12 +207,17 @@ const fetchConfigValues = async () => {
 
 const onComponentChange = () => { fetchVariables() }
 
-const saveConfigs = async () => {
-  if (!activeComponent.value) return
+const cleanCurrentValues = () => {
   const cleanValues: Record<string, string> = {}
   for (const [key, val] of Object.entries(configValues.value)) {
     if (val !== '***ENCRYPTED***') cleanValues[key] = String(val ?? '')
   }
+  return cleanValues
+}
+
+const saveConfigs = async () => {
+  if (!activeComponent.value) return
+  const cleanValues = cleanCurrentValues()
   saving.value = true
   try {
     await updateEnvConfigs(envId, activeComponent.value, { values: cleanValues, updated_by: 'admin' })
@@ -215,7 +234,7 @@ const previewConfig = async () => {
   if (!comp) return
   previewLoading.value = true
   try {
-    const res: any = await previewConfigs(envId, comp.id, comp.name)
+    const res: any = await previewConfigs(envId, comp.id, comp.name, cleanCurrentValues())
     previewData.value = res.data || {}
     previewTab.value = Object.keys(previewData.value)[0] || ''
     showPreview.value = true

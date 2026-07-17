@@ -97,6 +97,11 @@ export const updateEnv = (customerId: string, envId: string, data: { env_name?: 
 
 export const getTemplates = () => api.get('/templates')
 
+export const getTemplateVariables = (templateName: string) => api.get(`/templates/${templateName}/variables`)
+
+export const syncTemplates = (data: { templates?: string[]; overwrite?: boolean }) =>
+  api.post('/templates/sync', data)
+
 // ==================== 组件 API ====================
 
 export const getComponents = () => api.get('/components')
@@ -163,8 +168,8 @@ export const getEnvConfigs = (envId: string) => api.get(`/envs/${envId}/configs`
 export const updateEnvConfigs = (envId: string, componentId: string, data: { values: Record<string, string>; updated_by?: string }) =>
   api.put(`/envs/${envId}/components/${componentId}/configs`, data)
 
-export const previewConfigs = (envId: string, componentId: string, componentName?: string) =>
-  api.post(`/envs/${envId}/configs/preview`, { component_id: componentId, component_name: componentName })
+export const previewConfigs = (envId: string, componentId: string, componentName?: string, values?: Record<string, string>) =>
+  api.post(`/envs/${envId}/configs/preview`, { component_id: componentId, component_name: componentName, values })
 
 export const exportPackage = (envId: string) =>
   axios.post(`/api/v1/envs/${envId}/export`, {}, { responseType: 'blob' })

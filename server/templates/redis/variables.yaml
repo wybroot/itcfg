@@ -54,7 +54,7 @@ variables:
     default: "900 1 300 10 60 10000"
     required: false
     group: 持久化配置
-    description: 格式: "秒数 变更次数 秒数 变更次数 ..."
+    description: '格式: "秒数 变更次数 秒数 变更次数 ..."'
 
   - name: APPENDONLY
     label: AOF 持久化
