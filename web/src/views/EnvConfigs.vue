@@ -197,7 +197,7 @@ const saveConfigs = async () => {
   if (!activeComponent.value) return
   const cleanValues: Record<string, string> = {}
   for (const [key, val] of Object.entries(configValues.value)) {
-    if (val !== '***ENCRYPTED***') cleanValues[key] = val as string
+    if (val !== '***ENCRYPTED***') cleanValues[key] = String(val ?? '')
   }
   saving.value = true
   try {
