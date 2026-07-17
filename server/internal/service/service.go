@@ -195,9 +195,66 @@ func (s *ComponentService) ImportVariablesFromTemplate(componentID string, overw
 	if templateDir == "" {
 		templateDir = component.Name
 	}
-	variablesFile, err := s.templateEngine.LoadVariables(templateDir)
+	variables, err := s.buildVariablesFromTemplate(templateDir)
 	if err != nil {
 		return err
+	}
+	return s.repo.UpsertVariablesByName(componentID, variables, overwrite)
+}
+
+func (s *ComponentService) SyncTemplate(templateDir string, overwrite bool) (*model.Component, error) {
+	if s.templateEngine == nil {
+		return nil, fmt.Errorf("模板引擎未初始化")
+	}
+	manifest, err := s.templateEngine.LoadManifest(templateDir)
+	if err != nil {
+		return nil, err
+	}
+	component := &model.Component{
+		Name:        manifest.Name,
+		DisplayName: manifest.DisplayName,
+		Description: manifest.Description,
+		Category:    manifest.Category,
+		TemplateDir: templateDir,
+		IsActive:    true,
+	}
+	existingComponents, err := s.repo.List()
+	if err != nil {
+		return nil, err
+	}
+	for i := range existingComponents {
+		if existingComponents[i].Name == manifest.Name {
+			existingComponents[i].DisplayName = component.DisplayName
+			existingComponents[i].Description = component.Description
+			existingComponents[i].Category = component.Category
+			existingComponents[i].TemplateDir = component.TemplateDir
+			existingComponents[i].IsActive = true
+			if err := s.repo.Update(&existingComponents[i]); err != nil {
+				return nil, err
+			}
+			component = &existingComponents[i]
+			break
+		}
+	}
+	if component.ID == uuid.Nil {
+		if err := s.repo.Create(component); err != nil {
+			return nil, err
+		}
+	}
+	variables, err := s.buildVariablesFromTemplate(templateDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpsertVariablesByName(component.ID.String(), variables, overwrite); err != nil {
+		return nil, err
+	}
+	return s.GetByID(component.ID.String())
+}
+
+func (s *ComponentService) buildVariablesFromTemplate(templateDir string) ([]model.ComponentVariable, error) {
+	variablesFile, err := s.templateEngine.LoadVariables(templateDir)
+	if err != nil {
+		return nil, err
 	}
 	variables := make([]model.ComponentVariable, 0, len(variablesFile.Variables))
 	for i, v := range variablesFile.Variables {
@@ -215,11 +272,11 @@ func (s *ComponentService) ImportVariablesFromTemplate(componentID string, overw
 			LinkedTo:       v.LinkedTo,
 		}
 		if err := normalizeAndValidateVariable(&variable); err != nil {
-			return err
+			return nil, err
 		}
 		variables = append(variables, variable)
 	}
-	return s.repo.UpsertVariablesByName(componentID, variables, overwrite)
+	return variables, nil
 }
 
 func normalizeAndValidateVariable(variable *model.ComponentVariable) error {

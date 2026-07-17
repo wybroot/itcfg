@@ -109,6 +109,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, jwtMiddleware gin.HandlerFunc) {
 
 		// 模板管理
 		api.GET("/templates", h.ListTemplates)
+		api.GET("/templates/:name/variables", h.GetTemplateVariables)
+		api.POST("/templates/sync", h.SyncTemplates)
 
 		// 组件管理
 		api.GET("/components", h.ListComponents)
@@ -422,7 +424,63 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	components, err := h.componentSvc.List()
+	if err == nil {
+		componentByTemplate := map[string]model.Component{}
+		for _, component := range components {
+			componentByTemplate[component.TemplateDir] = component
+			componentByTemplate[component.Name] = component
+		}
+		for i := range templates {
+			if component, ok := componentByTemplate[templates[i].TemplateDir]; ok {
+				templates[i].Registered = true
+				templates[i].RegisteredComponentID = component.ID.String()
+				templates[i].Active = component.IsActive
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"data": templates})
+}
+
+func (h *Handler) GetTemplateVariables(c *gin.Context) {
+	variables, err := h.templateEngine.LoadVariables(c.Param("name"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": variables.Variables})
+}
+
+type SyncTemplatesRequest struct {
+	Templates []string `json:"templates"`
+	Overwrite bool     `json:"overwrite"`
+}
+
+func (h *Handler) SyncTemplates(c *gin.Context) {
+	var req SyncTemplatesRequest
+	_ = c.ShouldBindJSON(&req)
+	templates, err := h.templateEngine.ListTemplates()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	selected := map[string]bool{}
+	for _, name := range req.Templates {
+		selected[name] = true
+	}
+	results := []gin.H{}
+	for _, tpl := range templates {
+		if len(selected) > 0 && !selected[tpl.TemplateDir] && !selected[tpl.Name] {
+			continue
+		}
+		component, err := h.componentSvc.SyncTemplate(tpl.TemplateDir, req.Overwrite)
+		if err != nil {
+			results = append(results, gin.H{"template": tpl.TemplateDir, "status": "error", "error": err.Error()})
+			continue
+		}
+		results = append(results, gin.H{"template": tpl.TemplateDir, "status": "synced", "component_id": component.ID})
+	}
+	c.JSON(http.StatusOK, gin.H{"data": results})
 }
 
 // ==================== 组件 Handler ====================
@@ -665,8 +723,9 @@ func (h *Handler) UpdateEnvConfigs(c *gin.Context) {
 func (h *Handler) PreviewConfigs(c *gin.Context) {
 	envID := c.Param("envId")
 	var req struct {
-		ComponentID   string `json:"component_id"`
-		ComponentName string `json:"component_name"`
+		ComponentID   string            `json:"component_id"`
+		ComponentName string            `json:"component_name"`
+		Values        map[string]string `json:"values"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -690,6 +749,9 @@ func (h *Handler) PreviewConfigs(c *gin.Context) {
 	savedValues := make(map[string]string)
 	for _, cfg := range configs {
 		savedValues[cfg.VariableID.String()] = cfg.VarValue
+	}
+	for variableID, value := range req.Values {
+		savedValues[variableID] = value
 	}
 	renderValues := make(map[string]string)
 	for _, variable := range component.Variables {

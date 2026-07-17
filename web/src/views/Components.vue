@@ -2,18 +2,22 @@
   <div class="page components-page">
     <PageHeader title="组件管理" subtitle="维护可部署组件及其配置变量定义">
       <template #actions>
-        <el-button type="primary" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon> 新建组件
-        </el-button>
+        <el-space wrap>
+          <el-button @click="$router.push('/templates')">从模板添加组件</el-button>
+          <el-button type="primary" @click="openCreateDialog">
+            <el-icon><Plus /></el-icon> 新建自定义组件
+          </el-button>
+        </el-space>
       </template>
     </PageHeader>
 
     <PageCard title="组件列表" :subtitle="`共 ${components.length} 个组件，配置页面会按这里的变量定义生成表单`">
       <el-table :data="components" stripe v-loading="loading" empty-text="暂无组件，请先新建组件">
-        <el-table-column label="组件" min-width="190">
+        <el-table-column label="组件" min-width="210">
           <template #default="{ row }">
             <div class="component-name">{{ row.display_name }}</div>
             <div class="muted code-text">{{ row.name }}</div>
+            <div v-if="row.description" class="component-desc">{{ row.description }}</div>
           </template>
         </el-table-column>
         <el-table-column prop="category" label="分类" width="130">
@@ -31,10 +35,12 @@
             <el-tag :type="row.variables?.length ? 'success' : 'info'" effect="light">{{ row.variables?.length || 0 }} 个</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" min-width="220">
+        <el-table-column label="变量分组" min-width="180">
           <template #default="{ row }">
-            <span v-if="row.description">{{ row.description }}</span>
-            <span v-else class="muted">未填写</span>
+            <el-space wrap v-if="getVariableGroups(row).length">
+              <el-tag v-for="group in getVariableGroups(row)" :key="group" size="small" type="info" effect="plain">{{ group }}</el-tag>
+            </el-space>
+            <span v-else class="muted">未同步变量</span>
           </template>
         </el-table-column>
         <el-table-column prop="is_active" label="状态" width="100">
@@ -92,44 +98,60 @@
         <div>
           <div class="component-name">{{ variableTarget.display_name }}</div>
           <div class="muted code-text">{{ variableTarget.template_dir || variableTarget.name }}</div>
+          <div class="muted">优先从模板同步变量；手工新增/编辑仅用于自定义组件或现场差异补充。</div>
         </div>
         <el-space wrap>
-          <el-button @click="importVariables(false)" :loading="importing">从模板导入</el-button>
+          <el-button type="success" @click="importVariables(false)" :loading="importing">同步模板变量</el-button>
           <el-button type="warning" plain @click="importVariables(true)" :loading="importing">覆盖同步</el-button>
-          <el-button type="primary" @click="openVariableDialog()">新增变量</el-button>
+          <el-button type="primary" plain @click="openVariableDialog()">高级：新增变量</el-button>
         </el-space>
       </div>
 
-      <el-table :data="variables" stripe v-loading="variableLoading" empty-text="暂无变量，请新增或从模板导入">
-        <el-table-column prop="var_name" label="变量名" min-width="150">
-          <template #default="{ row }"><span class="code-text">{{ row.var_name }}</span></template>
-        </el-table-column>
-        <el-table-column prop="var_label" label="标签" min-width="150" />
-        <el-table-column prop="var_type" label="类型" width="100">
-          <template #default="{ row }"><el-tag effect="light">{{ row.var_type }}</el-tag></template>
-        </el-table-column>
-        <el-table-column prop="default_value" label="默认值" min-width="120">
-          <template #default="{ row }">
-            <span v-if="row.default_value" class="code-text">{{ row.default_value }}</span>
-            <span v-else class="muted">空</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="required" label="必填" width="80">
-          <template #default="{ row }">{{ row.required ? '是' : '否' }}</template>
-        </el-table-column>
-        <el-table-column prop="var_group" label="分组" width="120" />
-        <el-table-column prop="sort_order" label="排序" width="80" />
-        <el-table-column label="操作" width="140" fixed="right">
-          <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="openVariableDialog(row)">编辑</el-button>
-            <el-popconfirm title="删除变量会同步删除该变量已保存的客户配置，确认删除?" @confirm="handleDeleteVariable(row.id)">
-              <template #reference>
-                <el-button size="small" text type="danger">删除</el-button>
+      <div v-loading="variableLoading" class="variable-groups">
+        <el-empty v-if="!variableLoading && variables.length === 0" description="该组件暂无变量定义，请优先从模板同步变量" />
+        <section v-for="group in variableGroups" :key="group" class="variable-group">
+          <div class="group-header">
+            <div>
+              <h3>{{ group }}</h3>
+              <p>{{ getVariablesByGroup(group).length }} 个配置项</p>
+            </div>
+          </div>
+          <el-table :data="getVariablesByGroup(group)" stripe size="small">
+            <el-table-column prop="var_name" label="变量名" min-width="150">
+              <template #default="{ row }"><span class="code-text">{{ row.var_name }}</span></template>
+            </el-table-column>
+            <el-table-column prop="var_label" label="标签" min-width="150" />
+            <el-table-column prop="var_type" label="类型" width="100">
+              <template #default="{ row }"><el-tag effect="light" size="small">{{ row.var_type }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="default_value" label="默认值" min-width="120">
+              <template #default="{ row }">
+                <span v-if="row.default_value" class="code-text">{{ row.default_value }}</span>
+                <span v-else class="muted">空</span>
               </template>
-            </el-popconfirm>
-          </template>
-        </el-table-column>
-      </el-table>
+            </el-table-column>
+            <el-table-column prop="required" label="必填" width="80">
+              <template #default="{ row }">{{ row.required ? '是' : '否' }}</template>
+            </el-table-column>
+            <el-table-column prop="description" label="说明" min-width="220">
+              <template #default="{ row }">
+                <div>{{ row.description || '-' }}</div>
+                <div v-if="row.linked_to" class="muted">关联：<span class="code-text">{{ row.linked_to }}</span></div>
+              </template>
+            </el-table-column>
+            <el-table-column label="高级操作" width="150" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" text type="primary" @click="openVariableDialog(row)">编辑</el-button>
+                <el-popconfirm title="删除变量会同步删除该变量已保存的客户配置，确认删除?" @confirm="handleDeleteVariable(row.id)">
+                  <template #reference>
+                    <el-button size="small" text type="danger">删除</el-button>
+                  </template>
+                </el-popconfirm>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </div>
     </el-drawer>
 
     <el-dialog v-model="variableDialogVisible" :title="isVariableEditing ? '编辑变量' : '新增变量'" width="620px" @closed="resetVariableForm">
@@ -183,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, type FormRules } from 'element-plus'
 import PageHeader from '../components/PageHeader.vue'
 import PageCard from '../components/PageCard.vue'
@@ -274,6 +296,11 @@ const variableRules: FormRules = {
 }
 
 const getCategoryLabel = (category: string) => categoryOptions.find(c => c.value === category)?.label || category || '未分类'
+const getVariableGroups = (component: ComponentItem) => Array.from(new Set((component.variables || []).map(v => v.var_group || '基础配置')))
+const variableGroups = computed(() => Array.from(new Set(variables.value.map(v => v.var_group || '基础配置'))))
+const getVariablesByGroup = (group: string) => variables.value
+  .filter(v => (v.var_group || '基础配置') === group)
+  .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
 
 const fetchComponents = async () => {
   loading.value = true
@@ -431,5 +458,11 @@ onMounted(fetchComponents)
 <style scoped>
 .components-page { max-width: 1440px; margin: 0 auto; }
 .component-name { font-weight: 650; color: var(--itcfg-text-primary); }
+.component-desc { margin-top: 6px; color: var(--itcfg-text-secondary); font-size: 13px; line-height: 1.5; }
 .variable-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; padding: 14px 16px; border: 1px solid var(--itcfg-border); border-radius: 16px; background: var(--itcfg-surface-soft); }
+.variable-groups { display: flex; flex-direction: column; gap: 16px; }
+.variable-group { padding: 16px; border: 1px solid var(--itcfg-border); border-radius: 16px; background: #fff; }
+.group-header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--itcfg-border); }
+.group-header h3 { margin: 0; font-size: 16px; color: var(--itcfg-text-primary); }
+.group-header p { margin: 5px 0 0; color: var(--itcfg-text-secondary); font-size: 12px; }
 </style>

@@ -83,11 +83,11 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="环境组件" v-model="showComponentDialog" width="640px">
+    <el-dialog title="环境组件" v-model="showComponentDialog" width="760px">
       <el-alert type="info" :closable="false" class="dialog-alert">
-        请选择当前环境需要部署的组件。配置页和制品页只会展示已启用组件。
+        请选择当前环境需要部署的组件。配置页和制品页只会展示已启用组件，组件变量来自模板目录。
       </el-alert>
-      <el-table :data="componentOptions" v-loading="componentLoading" size="small" empty-text="暂无可选组件">
+      <el-table :data="componentOptions" v-loading="componentLoading" size="small" empty-text="暂无可选组件，请先到模板目录同步组件">
         <el-table-column label="启用" width="80">
           <template #default="{ row }"><el-switch v-model="selectedComponents[row.id]" /></template>
         </el-table-column>
@@ -98,6 +98,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="category" label="分类" width="130" />
+        <el-table-column label="变量" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.variables?.length ? 'success' : 'info'" effect="light">{{ row.variables?.length || 0 }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="部署顺序" width="110">
           <template #default="{ $index }">{{ $index + 1 }}</template>
         </el-table-column>
@@ -202,7 +207,9 @@ const openComponentDialog = async (env: Env) => {
   selectedComponents.value = {}
   try {
     const [componentsRes, envComponentsRes]: any[] = await Promise.all([getComponents(), getEnvComponents(env.id)])
-    componentOptions.value = (componentsRes.data || []).filter((comp: any) => ['postgresql', 'java-app', 'nginx'].includes(comp.template_dir || comp.name))
+    componentOptions.value = (componentsRes.data || [])
+      .filter((comp: any) => comp.is_active !== false)
+      .sort((a: any, b: any) => (a.category || '').localeCompare(b.category || '') || (a.display_name || a.name).localeCompare(b.display_name || b.name))
     ;(envComponentsRes.data || []).forEach((item: any) => { selectedComponents.value[item.component_id] = item.enabled !== false })
   } catch { ElMessage.error('获取环境组件失败') } finally { componentLoading.value = false }
 }

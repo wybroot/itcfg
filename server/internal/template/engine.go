@@ -36,18 +36,18 @@ type Dep struct {
 
 // VariableDefinition 变量定义
 type VariableDefinition struct {
-	Name         string   `yaml:"name" json:"name"`
-	Label        string   `yaml:"label" json:"label"`
-	Type         string   `yaml:"type" json:"type"`
-	Default      string   `yaml:"default" json:"default"`
-	Required     bool     `yaml:"required" json:"required"`
-	Min          int      `yaml:"min" json:"min"`
-	Max          int      `yaml:"max" json:"max"`
-	Regex        string   `yaml:"regex" json:"regex"`
-	Options      []string `yaml:"options" json:"options"`
-	Group        string   `yaml:"group" json:"group"`
-	Description  string   `yaml:"description" json:"description"`
-	LinkedTo     string   `yaml:"linked_to" json:"linked_to"`
+	Name        string   `yaml:"name" json:"name"`
+	Label       string   `yaml:"label" json:"label"`
+	Type        string   `yaml:"type" json:"type"`
+	Default     string   `yaml:"default" json:"default"`
+	Required    bool     `yaml:"required" json:"required"`
+	Min         int      `yaml:"min" json:"min"`
+	Max         int      `yaml:"max" json:"max"`
+	Regex       string   `yaml:"regex" json:"regex"`
+	Options     []string `yaml:"options" json:"options"`
+	Group       string   `yaml:"group" json:"group"`
+	Description string   `yaml:"description" json:"description"`
+	LinkedTo    string   `yaml:"linked_to" json:"linked_to"`
 }
 
 // VariablesFile 变量定义文件
@@ -161,13 +161,20 @@ func (e *Engine) BuildValues(componentName string, configValues map[string]strin
 
 // TemplateInfo 模板摘要信息
 type TemplateInfo struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	Description string `json:"description"`
-	Category    string `json:"category"`
-	OutputDir   string `json:"output_dir"`
-	FileCount   int    `json:"file_count"`
-	VarCount    int    `json:"var_count"`
+	Name                  string       `json:"name"`
+	TemplateDir           string       `json:"template_dir"`
+	DisplayName           string       `json:"display_name"`
+	Description           string       `json:"description"`
+	Category              string       `json:"category"`
+	OutputDir             string       `json:"output_dir"`
+	FileCount             int          `json:"file_count"`
+	VarCount              int          `json:"var_count"`
+	VariableGroups        []string     `json:"variable_groups"`
+	ConfigFiles           []ConfigFile `json:"config_files"`
+	Dependencies          []Dep        `json:"dependencies"`
+	Registered            bool         `json:"registered"`
+	RegisteredComponentID string       `json:"registered_component_id"`
+	Active                bool         `json:"active"`
 }
 
 // ListTemplates 列出所有可用的组件模板
@@ -190,18 +197,30 @@ func (e *Engine) ListTemplates() ([]TemplateInfo, error) {
 
 		vars, err := e.LoadVariables(entry.Name())
 		varCount := 0
+		groups := []string{}
 		if err == nil {
 			varCount = len(vars.Variables)
+			seenGroups := map[string]bool{}
+			for _, variable := range vars.Variables {
+				if variable.Group != "" && !seenGroups[variable.Group] {
+					groups = append(groups, variable.Group)
+					seenGroups[variable.Group] = true
+				}
+			}
 		}
 
 		templates = append(templates, TemplateInfo{
-			Name:        manifest.Name,
-			DisplayName: manifest.DisplayName,
-			Description: manifest.Description,
-			Category:    manifest.Category,
-			OutputDir:   manifest.OutputDir,
-			FileCount:   len(manifest.ConfigFiles),
-			VarCount:    varCount,
+			Name:           manifest.Name,
+			TemplateDir:    entry.Name(),
+			DisplayName:    manifest.DisplayName,
+			Description:    manifest.Description,
+			Category:       manifest.Category,
+			OutputDir:      manifest.OutputDir,
+			FileCount:      len(manifest.ConfigFiles),
+			VarCount:       varCount,
+			VariableGroups: groups,
+			ConfigFiles:    manifest.ConfigFiles,
+			Dependencies:   manifest.Dependencies,
 		})
 	}
 	return templates, nil
