@@ -30,6 +30,9 @@ tmp/
 temp/
 *.tmp
 
+# Docker 数据
+docker/data/
+
 # 系统文件
 .DS_Store
 Thumbs.db
